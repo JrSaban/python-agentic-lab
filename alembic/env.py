@@ -11,6 +11,7 @@ from src.core.database import Base
 
 # IMPORTANT : On importe tous nos modèles pour qu'Alembic puisse les détecter
 from src.modules.todos.models import Todo  # noqa: F401
+from src.modules.categories.models import Category # noqa: F401
 
 config = context.config
 
