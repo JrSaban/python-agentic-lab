@@ -20,9 +20,9 @@ class TodoRepository:
         result = await self.session.execute(query)
         return result.scalars().all()
 
-    async def get_by_id(self, todo_id: int) -> Todo | None:
+    async def get_by_id(self, entity_id: int) -> Todo | None:
         """Récupère une tâche par son identifiant unique."""
-        query = select(Todo).where(Todo.id == todo_id)
+        query = select(Todo).where(Todo.id == entity_id)
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
