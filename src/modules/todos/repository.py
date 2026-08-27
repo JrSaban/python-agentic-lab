@@ -1,13 +1,15 @@
-from collections.abc import Sequence
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from src.modules.todos.models import Todo
-from src.modules.todos.schemas import TodoCreate, TodoUpdate
-
 """
 Repository Pattern pour l'accès aux données de Todo.
 Encapsule les requêtes SQL (SQLAlchemy 2.0 select, add, delete).
 """
+
+from collections.abc import Sequence
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.modules.todos.models import Todo
+from src.modules.todos.schemas import TodoCreate, TodoUpdate
 
 
 class TodoRepository:
@@ -33,13 +35,14 @@ class TodoRepository:
             description=data.description,
         )
         self.session.add(todo)
-        await self.session.flush()    # Génère l'ID via PostgreSQL sans commiter la transaction globale
+        # Génère l'ID via PostgreSQL sans commiter la transaction globale
+        await self.session.flush()
         await self.session.refresh(todo)
         return todo
 
     async def update(self, todo: Todo, data: TodoUpdate) -> Todo:
         """Met à jour une tâche existante avec les champs fournis."""
-        update_data = data.model_dump(exclude_unset=True)  # Ne prend que les champs envoyés par le client
+        update_data = data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(todo, field, value)
 

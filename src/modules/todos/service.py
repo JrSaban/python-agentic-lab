@@ -1,5 +1,7 @@
 from collections.abc import Sequence
+
 from fastapi import HTTPException, status
+
 from src.modules.todos.models import Todo
 from src.modules.todos.repository import TodoRepository
 from src.modules.todos.schemas import TodoCreate, TodoUpdate

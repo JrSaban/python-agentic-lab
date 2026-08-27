@@ -1,16 +1,19 @@
-from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 """
 DTOs et Validation avec Pydantic V2.
 Équivalent conceptuel des FormRequests (StoreTodoRequest, UpdateTodoRequest)
 ET des API Resources (TodoResource) dans Laravel.
 """
 
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 
 class TodoBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=255, description="Titre de la tâche")
-    description: str | None = Field(default=None, max_length=1000, description="Description détaillée optionnelle")
+    description: str | None = Field(
+        default=None, max_length=1000, description="Description détaillée optionnelle"
+    )
 
 
 class TodoCreate(TodoBase):
@@ -18,6 +21,7 @@ class TodoCreate(TodoBase):
     Payload reçu lors d'un POST /todos.
     Équivalent de StoreTodoRequest dans Laravel.
     """
+
     pass
 
 
@@ -27,6 +31,7 @@ class TodoUpdate(BaseModel):
     - Types 'str | None' et 'bool | None' pour satisfaire le typage statique de l'IDE.
     - @field_validator pour interdire 'null' si la clé est fournie.
     """
+
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=1000)
     is_completed: bool | None = None
@@ -48,6 +53,7 @@ class TodoResponse(TodoBase):
     Payload sérialisé et retourné au client HTTP.
     Équivalent de TodoResource::make($todo) dans Laravel.
     """
+
     id: int
     is_completed: bool
     created_at: datetime

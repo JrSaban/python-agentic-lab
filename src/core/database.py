@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+
 from sqlalchemy.ext.asyncio import (
     AsyncAttrs,
     AsyncSession,
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+
 from src.core.config import settings
 
 r"""
@@ -18,7 +20,7 @@ engine = create_async_engine(
     settings.async_database_url,
     echo=settings.DEBUG,  # Affiche les requêtes SQL générées dans les logs si DEBUG=True
     future=True,
-    pool_pre_ping=True,   # Vérifie la santé de la connexion avant chaque requête
+    pool_pre_ping=True,  # Vérifie la santé de la connexion avant chaque requête
 )
 
 # 2. La Fabrique de Sessions (SessionMaker) : Instancie une AsyncSession pour chaque transaction
@@ -36,6 +38,7 @@ class Base(AsyncAttrs, DeclarativeBase):
     Classe de base dont héritent tous les modèles SQLAlchemy du projet.
     Équivalent de la classe Model de Laravel Eloquent.
     """
+
     pass
 
 

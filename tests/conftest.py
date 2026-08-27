@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -38,9 +39,9 @@ async def setup_test_database() -> AsyncGenerator[None, None]:
     """
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     yield  # Le test s'exécute ici
-    
+
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
@@ -59,6 +60,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     Interroge l'application FastAPI en mémoire (sans ouvrir de vrai port réseau).
     Surcharge la dépendance de production 'get_db_session' par notre session de test.
     """
+
     async def override_get_db_session() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 

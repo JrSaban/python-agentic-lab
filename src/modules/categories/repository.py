@@ -4,8 +4,10 @@ Encapsule les requêtes SQL (SQLAlchemy 2.0 select, add, delete).
 """
 
 from collections.abc import Sequence
-from sqlalchemy import select, func
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.modules.categories.models import Category
 from src.modules.categories.schemas import CategoryCreate, CategoryUpdate
 
@@ -39,14 +41,14 @@ class CategoryRepository:
             color=data.color,
         )
         self.session.add(category)
-        await self.session.flush()    # Génère l'ID via PostgreSQL sans commiter la transaction globale
+        # Génère l'ID via PostgreSQL sans commiter la transaction globale
+        await self.session.flush()
         await self.session.refresh(category)
         return category
 
     async def update(self, category: Category, data: CategoryUpdate) -> Category:
         """Met à jour une categorie existante avec les champs fournis."""
-        update_data = data.model_dump(exclude_unset=True)  # Ne prend que les champs envoyés par le client
-
+        update_data = data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(category, field, value)
 

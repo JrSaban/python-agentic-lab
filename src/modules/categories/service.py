@@ -5,6 +5,7 @@ Service Layer (Logique métier pour les Categories).
 from collections.abc import Sequence
 
 from fastapi import HTTPException, status
+
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
 from src.modules.categories.schemas import CategoryCreate, CategoryUpdate

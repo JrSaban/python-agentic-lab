@@ -1,5 +1,5 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     Équivalent conceptuel de config/*.php et du .env dans Laravel.
     Les variables d'environnement sont strictement typées et validées au démarrage.
     """
+
     APP_NAME: str = "Todo API"
     APP_ENV: str = "development"
     DEBUG: bool = True
@@ -19,7 +20,7 @@ class Settings(BaseSettings):
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "todo_db"
-    
+
     # URL de connexion directe (optionnelle, surchargée par Docker Compose)
     DATABASE_URL: str | None = None
 
@@ -34,10 +35,7 @@ class Settings(BaseSettings):
         )
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=True,
-        extra="ignore"
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"
     )
 
 

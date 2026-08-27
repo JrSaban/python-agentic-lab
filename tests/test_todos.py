@@ -1,9 +1,9 @@
-from httpx import AsyncClient
-
 """
 Tests d'intégration des endpoints Todos.
 Équivalent conceptuel de tests/Feature/TodoTest.php dans Laravel.
 """
+
+from httpx import AsyncClient
 
 
 async def test_healthcheck(client: AsyncClient) -> None:
@@ -22,7 +22,7 @@ async def test_create_todo_success(client: AsyncClient) -> None:
         "description": "Café en grains bio",
     }
     response = await client.post("/api/v1/todos", json=payload)
-    
+
     assert response.status_code == 201
     data = response.json()
     assert data["id"] is not None
@@ -79,7 +79,9 @@ async def test_get_todo_not_found_returns_404(client: AsyncClient) -> None:
 
 async def test_patch_todo_success(client: AsyncClient) -> None:
     """Vérifie la mise à jour partielle (PATCH /api/v1/todos/{id})."""
-    create_res = await client.post("/api/v1/todos", json={"title": "Tâche initiale", "description": "Desc"})
+    create_res = await client.post(
+        "/api/v1/todos", json={"title": "Tâche initiale", "description": "Desc"}
+    )
     todo_id = create_res.json()["id"]
 
     # On ne modifie QUE is_completed

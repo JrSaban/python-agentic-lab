@@ -1,12 +1,16 @@
 from datetime import datetime
+
 from sqlalchemy import DateTime, String, func
-from src.core.database import Base
 from sqlalchemy.orm import Mapped, mapped_column
+
+from src.core.database import Base
+
 
 class Category(Base):
     """
     Modele SQLAlchemy pour la table 'categories'
     """
+
     __tablename__ = "categories"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, index=True)
@@ -18,6 +22,6 @@ class Category(Base):
         server_default=func.now(),
         nullable=False,
     )
-    
+
     def __repr__(self) -> str:
         return f"<Category id={self.id} name={self.name} color={self.color}>"
