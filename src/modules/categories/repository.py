@@ -1,13 +1,13 @@
-from collections.abc import Sequence
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from src.modules.categories.models import Category
-from src.modules.categories.schemas import CategoryCreate, CategoryUpdate
-
 """
 Repository Pattern pour l'accès aux données de Category.
 Encapsule les requêtes SQL (SQLAlchemy 2.0 select, add, delete).
 """
+
+from collections.abc import Sequence
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from src.modules.categories.models import Category
+from src.modules.categories.schemas import CategoryCreate, CategoryUpdate
 
 
 class CategoryRepository:
@@ -28,7 +28,7 @@ class CategoryRepository:
 
     async def get_by_name(self, name: str) -> Category | None:
         """Récupère une categorie par son nom."""
-        query = select(Category).where(Category.name == name)
+        query = select(Category).where(func.lower(Category.name) == func.lower(name))
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
@@ -49,7 +49,7 @@ class CategoryRepository:
 
         for field, value in update_data.items():
             setattr(category, field, value)
-        
+
         self.session.add(category)
         await self.session.flush()
         await self.session.refresh(category)
