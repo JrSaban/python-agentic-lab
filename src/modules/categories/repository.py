@@ -1,4 +1,3 @@
-from os import name
 from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,7 +46,7 @@ class CategoryRepository:
     async def update(self, category: Category, data: CategoryUpdate) -> Category:
         """Met à jour une categorie existante avec les champs fournis."""
         update_data = data.model_dump(exclude_unset=True)  # Ne prend que les champs envoyés par le client
-        
+
         for field, value in update_data.items():
             setattr(category, field, value)
         

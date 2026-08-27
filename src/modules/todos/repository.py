@@ -42,7 +42,7 @@ class TodoRepository:
         update_data = data.model_dump(exclude_unset=True)  # Ne prend que les champs envoyés par le client
         for field, value in update_data.items():
             setattr(todo, field, value)
-        
+
         self.session.add(todo)
         await self.session.flush()
         await self.session.refresh(todo)
