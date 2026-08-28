@@ -14,8 +14,8 @@ from src.modules.categories.repository import CategoryRepository
 from src.modules.categories.schemas import CategoryCreate, CategoryResponse, CategoryUpdate
 from src.modules.categories.service import CategoryService
 
-
 router = APIRouter(prefix="/categories", tags=["Categories"])
+
 
 # Factory de dépendance : instancie Repository et Service injectés par requête
 def get_category_service(
@@ -24,8 +24,10 @@ def get_category_service(
     repository = CategoryRepository(session)
     return CategoryService(repository)
 
+
 # Type alias pour injection propre et lisible (standard Python moderne)
 CategoryServiceDep = Annotated[CategoryService, Depends(get_category_service)]
+
 
 @router.get(
     "",
@@ -40,6 +42,7 @@ async def list_categories(
 ) -> Sequence[Category]:
     return await service.list_categories(skip=skip, limit=limit)
 
+
 @router.post(
     "",
     response_model=CategoryResponse,
@@ -53,6 +56,7 @@ async def create_category(
 ) -> Category:
     return await service.create_category(data)
 
+
 @router.get(
     "/{category_id}",
     response_model=CategoryResponse,
@@ -60,10 +64,11 @@ async def create_category(
     description="Récupère les détails d'une catégorie par son ID.",
 )
 async def get_category(
-    category_id: int,
     service: CategoryServiceDep,
+    category_id: int,
 ) -> Category:
     return await service.get_category_or_404(category_id)
+
 
 @router.patch(
     "/{category_id}",
@@ -72,11 +77,12 @@ async def get_category(
     description="Met à jour partiellement les champs d'une catégorie existante.",
 )
 async def update_category(
+    service: CategoryServiceDep,
     category_id: int,
     data: CategoryUpdate,
-    service: CategoryServiceDep,
 ) -> Category:
     return await service.update_category(category_id, data)
+
 
 @router.delete(
     "/{category_id}",
@@ -85,7 +91,7 @@ async def update_category(
     description="Supprime définitivement une catégorie de la base de données.",
 )
 async def delete_category(
-    category_id: int,
     service: CategoryServiceDep,
+    category_id: int,
 ) -> None:
     await service.delete_category(category_id)

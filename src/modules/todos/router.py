@@ -1,3 +1,8 @@
+"""
+Routing & Controller Layer pour le domaine Todos.
+Équivalent de routes/api.php et TodoController.php dans Laravel.
+"""
+
 from collections.abc import Sequence
 from typing import Annotated
 
@@ -9,11 +14,6 @@ from src.modules.todos.models import Todo
 from src.modules.todos.repository import TodoRepository
 from src.modules.todos.schemas import TodoCreate, TodoResponse, TodoUpdate
 from src.modules.todos.service import TodoService
-
-"""
-Routing & Controller Layer pour le domaine Todos.
-Équivalent de routes/api.php et TodoController.php dans Laravel.
-"""
 
 router = APIRouter(prefix="/todos", tags=["Todos"])
 
@@ -52,8 +52,8 @@ async def list_todos(
     description="Crée une nouvelle tâche et la persiste en base de données.",
 )
 async def create_todo(
-    data: TodoCreate,
     service: TodoServiceDep,
+    data: TodoCreate,
 ) -> Todo:
     return await service.create_todo(data)
 
@@ -65,8 +65,8 @@ async def create_todo(
     description="Récupère les détails d'une tâche par son ID.",
 )
 async def get_todo(
-    todo_id: int,
     service: TodoServiceDep,
+    todo_id: int,
 ) -> Todo:
     return await service.get_todo_or_404(todo_id)
 
@@ -78,9 +78,9 @@ async def get_todo(
     description="Met à jour partiellement les champs d'une tâche existante.",
 )
 async def update_todo(
+    service: TodoServiceDep,
     todo_id: int,
     data: TodoUpdate,
-    service: TodoServiceDep,
 ) -> Todo:
     return await service.update_todo(todo_id, data)
 
@@ -92,7 +92,7 @@ async def update_todo(
     description="Supprime définitivement une tâche de la base de données.",
 )
 async def delete_todo(
-    todo_id: int,
     service: TodoServiceDep,
+    todo_id: int,
 ) -> None:
     await service.delete_todo(todo_id)
