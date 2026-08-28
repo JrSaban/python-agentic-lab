@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from src.core.config import settings
+from src.modules.categories.router import router as categories_router
 from src.modules.todos.router import router as todos_router
 
 """
@@ -18,6 +19,7 @@ app = FastAPI(
 
 # Enregistrement des routes de l'API avec préfixe de version (/api/v1)
 app.include_router(todos_router, prefix=settings.API_V1_STR)
+app.include_router(categories_router, prefix=settings.API_V1_STR)
 
 
 @app.get("/health", tags=["System"])
