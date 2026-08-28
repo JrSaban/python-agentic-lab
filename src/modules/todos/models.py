@@ -1,9 +1,14 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.database import Base
+from src.modules.todos_categories.models import todos_categories
+
+if TYPE_CHECKING:
+    from src.modules.categories.models import Category
 
 
 class Todo(Base):
@@ -30,6 +35,11 @@ class Todo(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+    categories: Mapped[list["Category"]] = relationship(
+        secondary=todos_categories,
+        back_populates="todos",
     )
 
     def __repr__(self) -> str:
