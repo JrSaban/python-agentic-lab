@@ -23,19 +23,19 @@ class CategoryRepository:
         return result.scalars().all()
 
     async def get_by_id(self, entity_id: int) -> Category | None:
-        """Récupère une categorie par son identifiant unique."""
+        """Récupère une catégorie par son identifiant unique."""
         query = select(Category).where(Category.id == entity_id)
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
     async def get_by_name(self, name: str) -> Category | None:
-        """Récupère une categorie par son nom."""
+        """Récupère une catégorie par son nom."""
         query = select(Category).where(func.lower(Category.name) == func.lower(name))
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
     async def create(self, data: CategoryCreate) -> Category:
-        """Crée et persiste une nouvelle categorie."""
+        """Crée et persiste une nouvelle catégorie."""
         category = Category(
             name=data.name,
             color=data.color,
@@ -47,7 +47,7 @@ class CategoryRepository:
         return category
 
     async def update(self, category: Category, data: CategoryUpdate) -> Category:
-        """Met à jour une categorie existante avec les champs fournis."""
+        """Met à jour une catégorie existante avec les champs fournis."""
         update_data = data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(category, field, value)

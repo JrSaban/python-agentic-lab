@@ -16,31 +16,31 @@ class CategoryService:
         self.repository = repository
 
     async def list_categories(self, skip: int = 0, limit: int = 100) -> Sequence[Category]:
-        """Récupère l'ensemble des categories avec pagination."""
+        """Récupère l'ensemble des catégories avec pagination."""
         return await self.repository.get_all(skip=skip, limit=limit)
 
     async def get_category_or_404(self, entity_id: int) -> Category:
-        """Récupère une categorie ou lève une exception HTTP 404."""
+        """Récupère une catégorie ou lève une exception HTTP 404."""
         category = await self.repository.get_by_id(entity_id)
         if not category:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Category avec l'ID {entity_id} introuvable.",
+                detail=f"Catégorie avec l'ID {entity_id} introuvable.",
             )
         return category
 
     async def create_category(self, data: CategoryCreate) -> Category:
-        """Crée une nouvelle categorie."""
+        """Crée une nouvelle catégorie."""
         category = await self.repository.get_by_name(data.name)
         if category:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Une categorie avec le nom {data.name} existe deja.",
+                detail=f"Une catégorie avec le nom {data.name} existe déjà.",
             )
         return await self.repository.create(data)
 
     async def update_category(self, entity_id: int, data: CategoryUpdate) -> Category:
-        """Met à jour une categorie existante."""
+        """Met à jour une catégorie existante."""
         category = await self.get_category_or_404(entity_id)
 
         if data.name is not None and category.name.lower() != data.name.lower():
@@ -48,7 +48,7 @@ class CategoryService:
             if existing is not None:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Une categorie avec le nom {data.name} existe deja.",
+                    detail=f"Une catégorie avec le nom {data.name} existe déjà.",
                 )
 
         return await self.repository.update(category, data)
