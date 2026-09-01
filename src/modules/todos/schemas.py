@@ -8,6 +8,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.modules.categories.schemas import CategoryResponse
+
 
 class TodoBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=255, description="Titre de la tâche")
@@ -22,7 +24,10 @@ class TodoCreate(TodoBase):
     Équivalent de StoreTodoRequest dans Laravel.
     """
 
-    pass
+    category_ids: list[int] = Field(
+        default=[],
+        description="Liste des identifiants de catégories associées à la tâche",
+    )
 
 
 class TodoUpdate(BaseModel):
@@ -35,6 +40,10 @@ class TodoUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=1000)
     is_completed: bool | None = None
+    category_ids: list[int] | None = Field(
+        default=None,
+        description="Liste des identifiants de catégories associées à la tâche",
+    )
 
     @field_validator("title", "is_completed")
     @classmethod
@@ -62,3 +71,11 @@ class TodoResponse(TodoBase):
     # from_attributes=True permet à Pydantic d'extraire automatiquement
     # les données depuis les attributs d'un objet SQLAlchemy (ex: todo.title)
     model_config = ConfigDict(from_attributes=True)
+
+
+class TodoDetailResponse(TodoResponse):
+    """
+    Représentation d'un todo avec ses catégories.
+    """
+
+    categories: list[CategoryResponse] = []
