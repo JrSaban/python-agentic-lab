@@ -2,6 +2,7 @@ from collections.abc import Sequence
 
 from fastapi import HTTPException, status
 
+from src.modules.categories.repository import CategoryRepository
 from src.modules.todos.models import Todo
 from src.modules.todos.repository import TodoRepository
 from src.modules.todos.schemas import TodoCreate, TodoUpdate
@@ -13,8 +14,9 @@ Service Layer (Logique métier pour les Todos).
 
 
 class TodoService:
-    def __init__(self, repository: TodoRepository) -> None:
+    def __init__(self, repository: TodoRepository, category_repository: CategoryRepository) -> None:
         self.repository = repository
+        self.category_repository = category_repository
 
     async def list_todos(self, skip: int = 0, limit: int = 100) -> Sequence[Todo]:
         """Récupère l'ensemble des todos avec pagination."""
@@ -32,12 +34,18 @@ class TodoService:
 
     async def create_todo(self, data: TodoCreate) -> Todo:
         """Crée une nouvelle tâche."""
-        return await self.repository.create(data)
+        categories = await self.category_repository.get_by_ids(data.category_ids)
+        return await self.repository.create(data, categories)
 
     async def update_todo(self, todo_id: int, data: TodoUpdate) -> Todo:
         """Met à jour une tâche existante."""
         todo = await self.get_todo_or_404(todo_id)
-        return await self.repository.update(todo, data)
+
+        categories = None
+        if data.category_ids is not None:
+            categories = await self.category_repository.get_by_ids(data.category_ids)
+
+        return await self.repository.update(todo, data, categories)
 
     async def delete_todo(self, todo_id: int) -> None:
         """Supprime une tâche existante."""

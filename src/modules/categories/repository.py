@@ -28,6 +28,15 @@ class CategoryRepository:
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
+    async def get_by_ids(self, entity_ids: Sequence[int]) -> Sequence[Category]:
+        """Récupère une liste de catégories par leurs identifiants."""
+        if not entity_ids:
+            return []
+
+        query = select(Category).where(Category.id.in_(entity_ids))
+        result = await self.session.execute(query)
+        return result.scalars().all()
+
     async def get_by_name(self, name: str) -> Category | None:
         """Récupère une catégorie par son nom."""
         query = select(Category).where(func.lower(Category.name) == func.lower(name))
