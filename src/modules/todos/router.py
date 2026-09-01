@@ -10,9 +10,10 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_session
+from src.modules.categories.repository import CategoryRepository
 from src.modules.todos.models import Todo
 from src.modules.todos.repository import TodoRepository
-from src.modules.todos.schemas import TodoCreate, TodoResponse, TodoUpdate
+from src.modules.todos.schemas import TodoCreate, TodoDetailResponse, TodoResponse, TodoUpdate
 from src.modules.todos.service import TodoService
 
 router = APIRouter(prefix="/todos", tags=["Todos"])
@@ -23,7 +24,8 @@ def get_todo_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> TodoService:
     repository = TodoRepository(session)
-    return TodoService(repository)
+    category_repository = CategoryRepository(session)
+    return TodoService(repository, category_repository)
 
 
 # Type alias pour injection propre et lisible (standard Python moderne)
@@ -60,15 +62,21 @@ async def create_todo(
 
 @router.get(
     "/{todo_id}",
-    response_model=TodoResponse,
+    response_model=TodoResponse | TodoDetailResponse,
     summary="Afficher une tâche",
-    description="Récupère les détails d'une tâche par son ID.",
+    description="Récupère une tâche. `?include=categories` pour inclure ses catégories.",
 )
 async def get_todo(
     service: TodoServiceDep,
     todo_id: int,
-) -> Todo:
-    return await service.get_todo_or_404(todo_id)
+    include: Annotated[list[str] | None, Query()] = None,
+) -> TodoResponse | TodoDetailResponse:
+    with_categories = include is not None and "categories" in include
+    todo = await service.get_todo_or_404(todo_id, with_categories)
+
+    if with_categories:
+        return TodoDetailResponse.model_validate(todo)
+    return TodoResponse.model_validate(todo)
 
 
 @router.patch(

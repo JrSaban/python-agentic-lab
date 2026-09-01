@@ -22,9 +22,9 @@ class TodoService:
         """Récupère l'ensemble des todos avec pagination."""
         return await self.repository.get_all(skip=skip, limit=limit)
 
-    async def get_todo_or_404(self, todo_id: int) -> Todo:
+    async def get_todo_or_404(self, todo_id: int, with_categories: bool = False) -> Todo:
         """Récupère une tâche ou lève une exception HTTP 404."""
-        todo = await self.repository.get_by_id(todo_id)
+        todo = await self.repository.get_by_id(todo_id, with_categories=with_categories)
         if not todo:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -39,7 +39,7 @@ class TodoService:
 
     async def update_todo(self, todo_id: int, data: TodoUpdate) -> Todo:
         """Met à jour une tâche existante."""
-        todo = await self.get_todo_or_404(todo_id)
+        todo = await self.get_todo_or_404(todo_id, with_categories=data.category_ids is not None)
 
         categories = None
         if data.category_ids is not None:
