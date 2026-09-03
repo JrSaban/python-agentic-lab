@@ -45,6 +45,42 @@ async def test_create_todo_empty_title_returns_422(client: AsyncClient) -> None:
     assert response.status_code == 422
 
 
+async def test_create_todo_with_categories(client: AsyncClient) -> None:
+    """Vérifie que la création d'une tâche avec des catégories fonctionne"""
+    cat_1 = await client.post("/api/v1/categories", json={"name": "Catégorie 1"})
+    cat_2 = await client.post("/api/v1/categories", json={"name": "Catégorie 2"})
+
+    payload = {
+        "title": "Tâche avec catégories",
+        "category_ids": [cat_1.json()["id"], cat_2.json()["id"]],
+    }
+
+    response = await client.post("/api/v1/todos", json=payload)
+    todo_id = response.json()["id"]
+    assert response.json()["title"] == payload["title"]
+
+    detail = await client.get(f"/api/v1/todos/{todo_id}?include=categories")
+    assert detail.json()["categories"] == [cat_1.json(), cat_2.json()]
+
+
+async def test_create_todo_ignore_invalid_category_ids(client: AsyncClient) -> None:
+    """Création d'une tâche avec une catégorie inexistante"""
+    cat_1 = await client.post("/api/v1/categories", json={"name": "Catégorie 1"})
+
+    payload = {
+        "title": "Tâche avec catégorie inexistante",
+        "category_ids": [cat_1.json()["id"], 9999],
+    }
+
+    response = await client.post("/api/v1/todos", json=payload)
+    todo_id = response.json()["id"]
+    assert response.json()["title"] == payload["title"]
+
+    detail = await client.get(f"/api/v1/todos/{todo_id}?include=categories")
+    assert len(detail.json()["categories"]) == 1
+    assert detail.json()["categories"] == [cat_1.json()]
+
+
 async def test_list_todos(client: AsyncClient) -> None:
     """Vérifie la récupération de la liste des tâches (GET /api/v1/todos)."""
     # 1. Création de deux tâches
@@ -68,6 +104,49 @@ async def test_get_todo_by_id_success(client: AsyncClient) -> None:
     assert response.status_code == 200
     assert response.json()["id"] == created_id
     assert response.json()["title"] == "Lire Clean Architecture"
+
+
+async def test_get_todo_without_include_has_no_categories(client: AsyncClient) -> None:
+    """Obtenir une tâche sans inclure les catégories"""
+    cat_1 = await client.post("/api/v1/categories", json={"name": "Catégorie 1"})
+    cat_2 = await client.post("/api/v1/categories", json={"name": "Catégorie 2"})
+
+    payload = {
+        "title": "Tâche sans inclure catégories",
+        "category_ids": [cat_1.json()["id"], cat_2.json()["id"]],
+    }
+
+    todo = await client.post("/api/v1/todos", json=payload)
+    todo_id = todo.json()["id"]
+
+    response = await client.get(f"/api/v1/todos/{todo_id}")
+    data = response.json()
+
+    assert data["id"] == todo_id
+    assert data["title"] == payload["title"]
+    assert "categories" not in data
+
+
+async def test_get_todo_with_include_categories(client: AsyncClient) -> None:
+    """Obtenir une tâche en incluant les catégories"""
+    cat_1 = await client.post("/api/v1/categories", json={"name": "Catégorie 1"})
+    cat_2 = await client.post("/api/v1/categories", json={"name": "Catégorie 2"})
+
+    payload = {
+        "title": "Tâche en incluant les catégories",
+        "category_ids": [cat_1.json()["id"], cat_2.json()["id"]],
+    }
+
+    todo = await client.post("/api/v1/todos", json=payload)
+    todo_id = todo.json()["id"]
+
+    response = await client.get(f"/api/v1/todos/{todo_id}?include=categories")
+    data = response.json()
+
+    assert data["id"] == todo_id
+    assert data["title"] == payload["title"]
+    assert "categories" in data
+    assert len(data["categories"]) == len(payload["category_ids"])
 
 
 async def test_get_todo_not_found_returns_404(client: AsyncClient) -> None:
@@ -115,6 +194,74 @@ async def test_patch_todo_with_null_description_allowed(client: AsyncClient) -> 
     response = await client.patch(f"/api/v1/todos/{todo_id}", json={"description": None})
     assert response.status_code == 200
     assert response.json()["description"] is None
+
+
+async def test_update_todo_replaces_categories(client: AsyncClient) -> None:
+    """Mettre à jour les catégories d'une tâche"""
+    cat_1 = await client.post("/api/v1/categories", json={"name": "Catégorie 1"})
+    cat_2 = await client.post("/api/v1/categories", json={"name": "Catégorie 2"})
+    cat_3 = await client.post("/api/v1/categories", json={"name": "Catégorie 3"})
+    cat_4 = await client.post("/api/v1/categories", json={"name": "Catégorie 4"})
+
+    payload = {
+        "title": "Tâche avec catégories à mettre à jour",
+        "category_ids": [cat_1.json()["id"], cat_3.json()["id"]],
+    }
+
+    todo = await client.post("/api/v1/todos", json=payload)
+    todo_id = todo.json()["id"]
+
+    await client.patch(
+        f"/api/v1/todos/{todo_id}", json={"category_ids": [cat_2.json()["id"], cat_4.json()["id"]]}
+    )
+
+    response = await client.get(f"/api/v1/todos/{todo_id}?include=categories")
+    data = response.json()
+
+    assert data["id"] == todo_id
+    assert data["title"] == payload["title"]
+    assert data["categories"] == [cat_2.json(), cat_4.json()]
+
+
+async def test_update_todo_clears_categories_with_empty_list(client: AsyncClient) -> None:
+    """Vider les catégories d'une tâche avec une liste vide"""
+    cat_1 = await client.post("/api/v1/categories", json={"name": "Catégorie 1"})
+
+    payload = {"title": "Tâche avec catégories à vider", "category_ids": [cat_1.json()["id"]]}
+
+    todo = await client.post("/api/v1/todos", json=payload)
+    todo_id = todo.json()["id"]
+
+    await client.patch(f"/api/v1/todos/{todo_id}", json={"category_ids": []})
+
+    response = await client.get(f"/api/v1/todos/{todo_id}?include=categories")
+    data = response.json()
+
+    assert data["id"] == todo_id
+    assert data["title"] == payload["title"]
+    assert data["categories"] == []
+
+
+async def test_update_todo_omits_category_ids_keeps_existing(client: AsyncClient) -> None:
+    """Omettre la liste des catégories lors de la mise à jour"""
+    cat_1 = await client.post("/api/v1/categories", json={"name": "Catégorie 1"})
+
+    payload = {
+        "title": "Tâche avec catégories à mettre à jour",
+        "category_ids": [cat_1.json()["id"]],
+    }
+
+    todo = await client.post("/api/v1/todos", json=payload)
+    todo_id = todo.json()["id"]
+
+    await client.patch(f"/api/v1/todos/{todo_id}", json={"title": "Nouveau titre"})
+
+    response = await client.get(f"/api/v1/todos/{todo_id}?include=categories")
+    data = response.json()
+
+    assert data["id"] == todo_id
+    assert data["title"] == "Nouveau titre"
+    assert data["categories"] == [cat_1.json()]
 
 
 async def test_delete_todo_success(client: AsyncClient) -> None:
