@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import get_db_session
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
-from src.modules.categories.schemas import CategoryCreate, CategoryResponse, CategoryUpdate
+from src.modules.categories.schemas import (
+    CategoryCreate,
+    CategoryDetailResponse,
+    CategoryResponse,
+    CategoryUpdate,
+)
 from src.modules.categories.service import CategoryService
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
@@ -59,15 +64,24 @@ async def create_category(
 
 @router.get(
     "/{category_id}",
-    response_model=CategoryResponse,
+    response_model=CategoryResponse | CategoryDetailResponse,
     summary="Afficher une catégorie",
-    description="Récupère les détails d'une catégorie par son ID.",
+    description=(
+        "Récupère les détails d'une catégorie par son ID. "
+        "`?include=todos` Les tâches associées sont incluses."
+    ),
 )
 async def get_category(
     service: CategoryServiceDep,
     category_id: int,
-) -> Category:
-    return await service.get_category_or_404(category_id)
+    include: Annotated[list[str] | None, Query()] = None,
+) -> CategoryResponse | CategoryDetailResponse:
+    with_todos = include is not None and "todos" in include
+    category = await service.get_category_or_404(category_id, with_todos)
+
+    if with_todos:
+        return CategoryDetailResponse.model_validate(category)
+    return CategoryResponse.model_validate(category)
 
 
 @router.patch(

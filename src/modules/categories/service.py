@@ -19,9 +19,9 @@ class CategoryService:
         """Récupère l'ensemble des catégories avec pagination."""
         return await self.repository.get_all(skip=skip, limit=limit)
 
-    async def get_category_or_404(self, entity_id: int) -> Category:
+    async def get_category_or_404(self, entity_id: int, with_todos: bool = False) -> Category:
         """Récupère une catégorie ou lève une exception HTTP 404."""
-        category = await self.repository.get_by_id(entity_id)
+        category = await self.repository.get_by_id(entity_id, with_todos)
         if not category:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

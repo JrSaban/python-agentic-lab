@@ -8,7 +8,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from src.modules.categories.schemas import CategoryResponse
+from src.modules.categories.schemas import CategoryDetailResponse, CategoryResponse
 
 
 class TodoBase(BaseModel):
@@ -74,8 +74,9 @@ class TodoResponse(TodoBase):
 
 
 class TodoDetailResponse(TodoResponse):
-    """
-    Représentation d'un todo avec ses catégories.
-    """
+    """Représentation d'un todo avec ses catégories."""
 
     categories: list[CategoryResponse] = []
+
+
+CategoryDetailResponse.model_rebuild(_types_namespace={"TodoResponse": TodoResponse})
