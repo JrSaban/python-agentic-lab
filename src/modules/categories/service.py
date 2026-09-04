@@ -4,8 +4,7 @@ Service Layer (Logique métier pour les Categories).
 
 from collections.abc import Sequence
 
-from fastapi import HTTPException, status
-
+from src.core.exceptions import ConflictError, NotFoundError
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
 from src.modules.categories.schemas import CategoryCreate, CategoryUpdate
@@ -23,20 +22,14 @@ class CategoryService:
         """Récupère une catégorie ou lève une exception HTTP 404."""
         category = await self.repository.get_by_id(entity_id, with_todos)
         if not category:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Catégorie avec l'ID {entity_id} introuvable.",
-            )
+            raise NotFoundError(f"Catégorie avec l'ID {entity_id} introuvable.")
         return category
 
     async def create_category(self, data: CategoryCreate) -> Category:
         """Crée une nouvelle catégorie."""
         category = await self.repository.get_by_name(data.name)
         if category:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Une catégorie avec le nom {data.name} existe déjà.",
-            )
+            raise ConflictError(f"Une catégorie avec le nom {data.name} existe déjà.")
         return await self.repository.create(data)
 
     async def update_category(self, entity_id: int, data: CategoryUpdate) -> Category:
@@ -46,10 +39,7 @@ class CategoryService:
         if data.name is not None and category.name.lower() != data.name.lower():
             existing = await self.repository.get_by_name(data.name)
             if existing is not None:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Une catégorie avec le nom {data.name} existe déjà.",
-                )
+                raise ConflictError(f"Une catégorie avec le nom {data.name} existe déjà.")
 
         return await self.repository.update(category, data)
 

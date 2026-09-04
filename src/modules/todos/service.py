@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 
-from fastapi import HTTPException, status
-
+from src.core.exceptions import NotFoundError
 from src.modules.categories.repository import CategoryRepository
 from src.modules.todos.models import Todo
 from src.modules.todos.repository import TodoRepository
@@ -26,10 +25,7 @@ class TodoService:
         """Récupère une tâche ou lève une exception HTTP 404."""
         todo = await self.repository.get_by_id(todo_id, with_categories=with_categories)
         if not todo:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Tâche avec l'ID {todo_id} introuvable.",
-            )
+            raise NotFoundError(f"Tâche avec l'ID {todo_id} introuvable.")
         return todo
 
     async def create_todo(self, data: TodoCreate) -> Todo:
