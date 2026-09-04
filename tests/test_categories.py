@@ -169,45 +169,34 @@ async def test_update_category_keep_same_name_succeeds(client: AsyncClient) -> N
     assert response.json()["name"] == "Sport"
 
 
-async def test_get_category_with_include_has_todos(client: AsyncClient) -> None:
-    """Vérifie que l'inclusion des tâches fonctionne."""
-    # 1. Création de deux catégories avec des tâches
+async def test_get_todos_by_category(client: AsyncClient) -> None:
+    """Vérifie qu'on peut récupérer les tâches associées à une catégorie."""
     cat_1 = await client.post("/api/v1/categories", json={"name": "Sport"})
     cat_1_id = cat_1.json()["id"]
 
     todo_1 = await client.post(
-        "/api/v1/todos",
-        json = {"title": "Tache 1", "category_ids": [cat_1_id]}
+        "/api/v1/todos", json={"title": "Tache 1", "category_ids": [cat_1_id]}
     )
     todo_2 = await client.post(
-        "/api/v1/todos",
-        json = {"title": "Tache 2", "category_ids": [cat_1_id]}
+        "/api/v1/todos", json={"title": "Tache 2", "category_ids": [cat_1_id]}
     )
 
-    # 2. Récupération des catégories avec inclusion des tâches
-    response = await client.get(f"/api/v1/categories/{cat_1_id}?include=todos")
+    # 2. Récupération des tâches de la catégorie
+    response = await client.get(f"/api/v1/categories/{cat_1_id}/todos")
     assert response.status_code == 200
-
-    cat_1 = response.json()
-    assert cat_1["id"] == cat_1_id
-    assert "todos" in cat_1
-    assert len(cat_1["todos"]) == 2
-    assert cat_1["todos"][0]["id"] == todo_1.json()["id"]
-    assert cat_1["todos"][1]["id"] == todo_2.json()["id"]
+    data = response.json()
+    assert len(data) == 2
+    assert data[0]["id"] == todo_1.json()["id"]
+    assert data[1]["id"] == todo_2.json()["id"]
 
 
-async def test_get_category_without_include_has_no_todos(client: AsyncClient) -> None:
-    """Vérifie que l'absence d'inclusion des tâches fonctionne."""
-    # 1. Création d'une catégorie avec une tâche
+async def test_get_todos_by_category_empty(client: AsyncClient) -> None:
+    """Vérifie qu'on récupère une liste vide quand une catégorie n'a pas de tâches."""
     cat_1 = await client.post("/api/v1/categories", json={"name": "Sport"})
     cat_1_id = cat_1.json()["id"]
 
-    await client.post("/api/v1/todos", json = {"title": "Tache 1", "category_ids": [cat_1_id]})
-
-    # 2. Récupération de la catégorie sans inclusion des tâches
-    response = await client.get(f"/api/v1/categories/{cat_1_id}")
+    response = await client.get(f"/api/v1/categories/{cat_1_id}/todos")
     assert response.status_code == 200
     data = response.json()
-    assert data["id"] == cat_1_id
-    assert "todos" not in data
-    
+    assert len(data) == 0
+    assert data == []

@@ -1,12 +1,8 @@
 """DTOs et Validation avec Pydantic V2"""
 
 from datetime import datetime
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-if TYPE_CHECKING:
-    from src.modules.todos.schemas import TodoResponse
 
 
 class CategoryBase(BaseModel):
@@ -45,8 +41,3 @@ class CategoryResponse(CategoryBase):
     id: int
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
-
-
-class CategoryDetailResponse(CategoryResponse):
-    """Représentation d'une catégorie avec ses tâches."""
-    todos: list["TodoResponse"] = []

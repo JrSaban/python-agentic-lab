@@ -11,13 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database import get_db_session
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
-from src.modules.categories.schemas import (
-    CategoryCreate,
-    CategoryDetailResponse,
-    CategoryResponse,
-    CategoryUpdate,
-)
+from src.modules.categories.schemas import CategoryCreate, CategoryResponse, CategoryUpdate
 from src.modules.categories.service import CategoryService
+from src.modules.todos.models import Todo
+from src.modules.todos.schemas import TodoResponse
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
 
@@ -64,24 +61,29 @@ async def create_category(
 
 @router.get(
     "/{category_id}",
-    response_model=CategoryResponse | CategoryDetailResponse,
+    response_model=CategoryResponse,
     summary="Afficher une catégorie",
-    description=(
-        "Récupère les détails d'une catégorie par son ID. "
-        "`?include=todos` Les tâches associées sont incluses."
-    ),
+    description="Récupère les détails d'une catégorie par son ID. ",
 )
 async def get_category(
     service: CategoryServiceDep,
     category_id: int,
-    include: Annotated[list[str] | None, Query()] = None,
-) -> CategoryResponse | CategoryDetailResponse:
-    with_todos = include is not None and "todos" in include
-    category = await service.get_category_or_404(category_id, with_todos)
+) -> Category:
+    return await service.get_category_or_404(category_id)
 
-    if with_todos:
-        return CategoryDetailResponse.model_validate(category)
-    return CategoryResponse.model_validate(category)
+
+@router.get(
+    "/{category_id}/todos",
+    response_model=list[TodoResponse],
+    summary="Lister les tâches d'une catégorie",
+    description="Récupère toutes les tâches associées à une catégorie.",
+)
+async def list_todos_by_category(
+    service: CategoryServiceDep,
+    category_id: int,
+) -> Sequence[Todo]:
+    category = await service.get_category_or_404(category_id, True)
+    return category.todos
 
 
 @router.patch(
