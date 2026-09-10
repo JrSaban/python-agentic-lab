@@ -42,8 +42,16 @@ async def list_todos(
     service: TodoServiceDep,
     skip: Annotated[int, Query(ge=0, description="Nombre d'éléments à sauter")] = 0,
     limit: Annotated[int, Query(ge=1, le=100, description="Nombre max d'éléments")] = 50,
+    is_completed: Annotated[
+        bool | None, Query(description="Filtre sur le statut de complétion")
+    ] = None,
+    category_ids: Annotated[
+        list[int] | None, Query(description="Filtre sur les catégories")
+    ] = None,
 ) -> Sequence[Todo]:
-    return await service.list_todos(skip=skip, limit=limit)
+    return await service.list_todos(
+        skip=skip, limit=limit, is_completed=is_completed, category_ids=category_ids
+    )
 
 
 @router.post(

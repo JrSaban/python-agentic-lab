@@ -18,9 +18,21 @@ class TodoRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[Todo]:
+    async def get_all(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        is_completed: bool | None = None,
+        category_ids: list[int] | None = None,
+    ) -> Sequence[Todo]:
         """Récupère une liste paginée de tâches."""
         query = select(Todo).offset(skip).limit(limit).order_by(Todo.id.desc())
+
+        if is_completed is not None:
+            query = query.where(Todo.is_completed == is_completed)
+        if category_ids is not None:
+            query = query.where(Todo.categories.any(Category.id.in_(category_ids)))
+
         result = await self.session.execute(query)
         return result.scalars().all()
 

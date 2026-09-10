@@ -17,9 +17,17 @@ class TodoService:
         self.repository = repository
         self.category_repository = category_repository
 
-    async def list_todos(self, skip: int = 0, limit: int = 100) -> Sequence[Todo]:
+    async def list_todos(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        is_completed: bool | None = None,
+        category_ids: list[int] | None = None,
+    ) -> Sequence[Todo]:
         """Récupère l'ensemble des todos avec pagination."""
-        return await self.repository.get_all(skip=skip, limit=limit)
+        return await self.repository.get_all(
+            skip=skip, limit=limit, is_completed=is_completed, category_ids=category_ids
+        )
 
     async def get_todo_or_404(self, todo_id: int, with_categories: bool = False) -> Todo:
         """Récupère une tâche ou lève une exception HTTP 404."""

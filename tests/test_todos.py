@@ -276,3 +276,44 @@ async def test_delete_todo_success(client: AsyncClient) -> None:
     # 2. Vérification que la tâche n'existe plus
     get_res = await client.get(f"/api/v1/todos/{todo_id}")
     assert get_res.status_code == 404
+
+
+async def test_list_filter_by_is_completed(client: AsyncClient) -> None:
+    """Vérifie le filtre sur le statut de complétion"""
+    todo_1 = await client.post("/api/v1/todos", json={"title": "Tâche 1"})
+    await client.post("/api/v1/todos", json={"title": "Tâche 2"})
+
+    # Seule la tâche 1 est marquée comme complétée
+    await client.patch(f"/api/v1/todos/{todo_1.json()['id']}", json={"is_completed": True})
+
+    response = await client.get("/api/v1/todos?is_completed=true")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["title"] == "Tâche 1"
+
+    response = await client.get("/api/v1/todos?is_completed=false")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["title"] == "Tâche 2"
+
+
+async def test_list_filter_by_category_ids(client: AsyncClient) -> None:
+    """Vérifie le filtre par catégories (sémantique union : au moins une des catégories)."""
+    cat_a = await client.post("/api/v1/categories", json={"name": "Cat A"})
+    cat_b = await client.post("/api/v1/categories", json={"name": "Cat B"})
+    cat_c = await client.post("/api/v1/categories", json={"name": "Cat C"})
+    cat_a_id = cat_a.json()["id"]
+    cat_b_id = cat_b.json()["id"]
+    cat_c_id = cat_c.json()["id"]
+
+    await client.post("/api/v1/todos", json={"title": "Tâche A", "category_ids": [cat_a_id]})
+    await client.post("/api/v1/todos", json={"title": "Tâche B", "category_ids": [cat_b_id]})
+    await client.post("/api/v1/todos", json={"title": "Tâche C", "category_ids": [cat_c_id]})
+
+    response = await client.get(f"/api/v1/todos?category_ids={cat_a_id}&category_ids={cat_b_id}")
+    assert response.status_code == 200
+    data = response.json()
+    titles = {todo["title"] for todo in data}
+    assert titles == {"Tâche A", "Tâche B"}
