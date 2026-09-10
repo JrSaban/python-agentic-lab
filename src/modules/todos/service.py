@@ -23,11 +23,14 @@ class TodoService:
         limit: int = 100,
         is_completed: bool | None = None,
         category_ids: list[int] | None = None,
-    ) -> Sequence[Todo]:
+    ) -> tuple[Sequence[Todo], int]:
         """Récupère l'ensemble des todos avec pagination."""
-        return await self.repository.get_all(
+        todos = await self.repository.get_all(
             skip=skip, limit=limit, is_completed=is_completed, category_ids=category_ids
         )
+        total = await self.repository.count(is_completed=is_completed, category_ids=category_ids)
+
+        return (todos, total)
 
     async def get_todo_or_404(self, todo_id: int, with_categories: bool = False) -> Todo:
         """Récupère une tâche ou lève une exception HTTP 404."""

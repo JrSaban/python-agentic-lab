@@ -3,13 +3,13 @@ Routing & Controller Layer pour le domaine Todos.
 Équivalent de routes/api.php et TodoController.php dans Laravel.
 """
 
-from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_session
+from src.core.schemas import PaginatedResponse
 from src.modules.categories.repository import CategoryRepository
 from src.modules.todos.models import Todo
 from src.modules.todos.repository import TodoRepository
@@ -34,7 +34,7 @@ TodoServiceDep = Annotated[TodoService, Depends(get_todo_service)]
 
 @router.get(
     "",
-    response_model=list[TodoResponse],
+    response_model=PaginatedResponse[TodoResponse],
     summary="Lister toutes les tâches",
     description="Retourne une liste paginée de tâches.",
 )
@@ -48,10 +48,12 @@ async def list_todos(
     category_ids: Annotated[
         list[int] | None, Query(description="Filtre sur les catégories")
     ] = None,
-) -> Sequence[Todo]:
-    return await service.list_todos(
+) -> PaginatedResponse[TodoResponse]:
+    todos, total = await service.list_todos(
         skip=skip, limit=limit, is_completed=is_completed, category_ids=category_ids
     )
+
+    return PaginatedResponse(items=todos, total=total, skip=skip, limit=limit)
 
 
 @router.post(

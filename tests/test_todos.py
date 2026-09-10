@@ -91,8 +91,8 @@ async def test_list_todos(client: AsyncClient) -> None:
     response = await client.get("/api/v1/todos")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 2
-    assert data[0]["title"] == "Tâche 2"  # Tri décroissant par ID
+    assert len(data["items"]) == 2
+    assert data["items"][0]["title"] == "Tâche 2"  # Tri décroissant par ID
 
 
 async def test_get_todo_by_id_success(client: AsyncClient) -> None:
@@ -289,14 +289,14 @@ async def test_list_filter_by_is_completed(client: AsyncClient) -> None:
     response = await client.get("/api/v1/todos?is_completed=true")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 1
-    assert data[0]["title"] == "Tâche 1"
+    assert len(data["items"]) == 1
+    assert data["items"][0]["title"] == "Tâche 1"
 
     response = await client.get("/api/v1/todos?is_completed=false")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 1
-    assert data[0]["title"] == "Tâche 2"
+    assert len(data["items"]) == 1
+    assert data["items"][0]["title"] == "Tâche 2"
 
 
 async def test_list_filter_by_category_ids(client: AsyncClient) -> None:
@@ -315,5 +315,5 @@ async def test_list_filter_by_category_ids(client: AsyncClient) -> None:
     response = await client.get(f"/api/v1/todos?category_ids={cat_a_id}&category_ids={cat_b_id}")
     assert response.status_code == 200
     data = response.json()
-    titles = {todo["title"] for todo in data}
+    titles = {todo["title"] for todo in data["items"]}
     assert titles == {"Tâche A", "Tâche B"}
