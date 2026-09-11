@@ -317,3 +317,19 @@ async def test_list_filter_by_category_ids(client: AsyncClient) -> None:
     data = response.json()
     titles = {todo["title"] for todo in data["items"]}
     assert titles == {"Tâche A", "Tâche B"}
+
+
+async def test_list_filter_by_name(client: AsyncClient) -> None:
+    await client.post("/api/v1/todos", json={"title": "Sport"})
+    await client.post("/api/v1/todos", json={"title": "Tâche B"})
+    response = await client.get("/api/v1/todos?name=or")
+    assert response.status_code == 200
+    data = response.json()
+    titles = {todo["title"] for todo in data["items"]}
+    assert titles == {"Sport"}
+
+    response = await client.get("/api/v1/todos?name=tâche b")
+    assert response.status_code == 200
+    data = response.json()
+    titles = {todo["title"] for todo in data["items"]}
+    assert titles == {"Tâche B"}

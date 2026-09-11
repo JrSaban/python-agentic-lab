@@ -42,6 +42,7 @@ async def list_todos(
     service: TodoServiceDep,
     skip: Annotated[int, Query(ge=0, description="Nombre d'éléments à sauter")] = 0,
     limit: Annotated[int, Query(ge=1, le=100, description="Nombre max d'éléments")] = 50,
+    name: Annotated[str | None, Query(min_length=2, description="Filtre sur le nom")] = None,
     is_completed: Annotated[
         bool | None, Query(description="Filtre sur le statut de complétion")
     ] = None,
@@ -50,7 +51,7 @@ async def list_todos(
     ] = None,
 ) -> PaginatedResponse[TodoResponse]:
     todos, total = await service.list_todos(
-        skip=skip, limit=limit, is_completed=is_completed, category_ids=category_ids
+        skip=skip, limit=limit, name=name, is_completed=is_completed, category_ids=category_ids
     )
 
     return PaginatedResponse(items=todos, total=total, skip=skip, limit=limit)

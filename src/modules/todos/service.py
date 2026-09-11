@@ -21,14 +21,17 @@ class TodoService:
         self,
         skip: int = 0,
         limit: int = 100,
+        name: str | None = None,
         is_completed: bool | None = None,
         category_ids: list[int] | None = None,
     ) -> tuple[Sequence[Todo], int]:
         """Récupère l'ensemble des todos avec pagination."""
         todos = await self.repository.get_all(
-            skip=skip, limit=limit, is_completed=is_completed, category_ids=category_ids
+            skip=skip, limit=limit, name=name, is_completed=is_completed, category_ids=category_ids
         )
-        total = await self.repository.count(is_completed=is_completed, category_ids=category_ids)
+        total = await self.repository.count(
+            name=name, is_completed=is_completed, category_ids=category_ids
+        )
 
         return (todos, total)
 

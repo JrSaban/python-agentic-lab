@@ -22,12 +22,15 @@ class TodoRepository:
         self,
         skip: int = 0,
         limit: int = 100,
+        name: str | None = None,
         is_completed: bool | None = None,
         category_ids: list[int] | None = None,
     ) -> Sequence[Todo]:
         """Récupère une liste paginée de tâches."""
         query = select(Todo).offset(skip).limit(limit).order_by(Todo.id.desc())
-        query = self._apply_filters(query, is_completed, category_ids)
+        query = self._apply_filters(
+            query, name=name, is_completed=is_completed, category_ids=category_ids
+        )
 
         result = await self.session.execute(query)
         return result.scalars().all()
@@ -77,18 +80,29 @@ class TodoRepository:
         await self.session.flush()
 
     async def count(
-        self, is_completed: bool | None = None, category_ids: list[int] | None = None
+        self,
+        name: str | None = None,
+        is_completed: bool | None = None,
+        category_ids: list[int] | None = None,
     ) -> int:
         query = select(func.count()).select_from(Todo)
-        query = self._apply_filters(query, is_completed, category_ids)
+        query = self._apply_filters(
+            query, name=name, is_completed=is_completed, category_ids=category_ids
+        )
 
         result = await self.session.execute(query)
         return result.scalar_one()
 
     def _apply_filters(
-        self, query: Select, is_completed: bool | None = None, category_ids: list[int] | None = None
+        self,
+        query: Select,
+        name: str | None = None,
+        is_completed: bool | None = None,
+        category_ids: list[int] | None = None,
     ) -> Select:
         """Helper qui applique les filtres sur une requête."""
+        if name is not None:
+            query = query.where(Todo.title.ilike(f"%{name}%"))
         if is_completed is not None:
             query = query.where(Todo.is_completed == is_completed)
         if category_ids is not None:
