@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_session
+from src.core.schemas import PaginatedResponse
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
 from src.modules.categories.schemas import CategoryCreate, CategoryResponse, CategoryUpdate
@@ -33,7 +34,7 @@ CategoryServiceDep = Annotated[CategoryService, Depends(get_category_service)]
 
 @router.get(
     "",
-    response_model=list[CategoryResponse],
+    response_model=PaginatedResponse[CategoryResponse],
     summary="Lister toutes les catégories",
     description="Retourne une liste paginée de catégories.",
 )
@@ -41,8 +42,10 @@ async def list_categories(
     service: CategoryServiceDep,
     skip: Annotated[int, Query(ge=0, description="Nombre d'éléments à sauter")] = 0,
     limit: Annotated[int, Query(ge=1, le=100, description="Nombre max d'éléments")] = 50,
-) -> Sequence[Category]:
-    return await service.list_categories(skip=skip, limit=limit)
+    name: Annotated[str | None, Query(min_length=2, description="Filtre sur le nom")] = None,
+) -> PaginatedResponse[CategoryResponse]:
+    categories, total = await service.list_categories(skip=skip, limit=limit, name=name)
+    return PaginatedResponse(items=categories, total=total, skip=skip, limit=limit)
 
 
 @router.post(
@@ -82,7 +85,7 @@ async def list_todos_by_category(
     service: CategoryServiceDep,
     category_id: int,
 ) -> Sequence[Todo]:
-    category = await service.get_category_or_404(category_id, True)
+    category = await service.get_category_or_404(category_id, with_todos=True)
     return category.todos
 
 

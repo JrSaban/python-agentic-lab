@@ -14,9 +14,13 @@ class CategoryService:
     def __init__(self, repository: CategoryRepository) -> None:
         self.repository = repository
 
-    async def list_categories(self, skip: int = 0, limit: int = 100) -> Sequence[Category]:
+    async def list_categories(
+        self, skip: int = 0, limit: int = 100, name: str | None = None
+    ) -> tuple[Sequence[Category], int]:
         """Récupère l'ensemble des catégories avec pagination."""
-        return await self.repository.get_all(skip=skip, limit=limit)
+        categories = await self.repository.get_all(skip=skip, limit=limit, name=name)
+        total = await self.repository.count(name=name)
+        return (categories, total)
 
     async def get_category_or_404(self, entity_id: int, with_todos: bool = False) -> Category:
         """Récupère une catégorie ou lève une exception HTTP 404."""

@@ -5,7 +5,7 @@ Encapsule les requêtes SQL (SQLAlchemy 2.0 select, add, delete).
 
 from collections.abc import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,9 +17,12 @@ class CategoryRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[Category]:
+    async def get_all(
+        self, skip: int = 0, limit: int = 100, name: str | None = None
+    ) -> Sequence[Category]:
         """Récupère une liste paginée de catégories."""
         query = select(Category).offset(skip).limit(limit).order_by(Category.name.asc())
+        query = self._apply_filters(query, name=name)
         result = await self.session.execute(query)
         return result.scalars().all()
 
@@ -75,3 +78,20 @@ class CategoryRepository:
         """Supprime une catégorie de la base de données."""
         await self.session.delete(category)
         await self.session.flush()
+
+    async def count(self, name: str | None = None) -> int:
+        """Compte le nombre de catégories."""
+        query = select(func.count()).select_from(Category)
+        query = self._apply_filters(query, name=name)
+        result = await self.session.execute(query)
+        return result.scalar_one()
+
+    def _apply_filters(
+        self,
+        query: Select,
+        name: str | None = None,
+    ) -> Select:
+        """Helper qui applique les filtres sur une requête."""
+        if name is not None:
+            query = query.where(Category.name.ilike(f"%{name}%"))
+        return query

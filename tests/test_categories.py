@@ -48,8 +48,8 @@ async def test_list_categories(client: AsyncClient) -> None:
     response = await client.get("/api/v1/categories")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 2
-    assert data[0]["name"] == "House"  # Tri croissant par nom
+    assert data["total"] == 2
+    assert data["items"][0]["name"] == "House"  # Tri croissant par nom
 
 
 async def test_get_category_by_id_success(client: AsyncClient) -> None:
@@ -200,3 +200,17 @@ async def test_get_todos_by_category_empty(client: AsyncClient) -> None:
     data = response.json()
     assert len(data) == 0
     assert data == []
+
+
+async def test_list_categories_filter_by_name(client: AsyncClient) -> None:
+    """Vérifie qu'on peut filtrer les catégories par nom."""
+    cat_1 = await client.post("/api/v1/categories", json={"name": "Sport"})
+    cat_2 = await client.post("/api/v1/categories", json={"name": "Portable"})
+    await client.post("/api/v1/categories", json={"name": "House"})
+
+    response = await client.get("/api/v1/categories?name=port")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert data["items"][0] == cat_2.json()
+    assert data["items"][1] == cat_1.json()
