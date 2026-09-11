@@ -17,7 +17,7 @@ async def test_get_category_or_404_raises_when_not_found():
     with pytest.raises(NotFoundError):
         await service.get_category_or_404(1)
 
-    mock_category_repo.get_by_id.assert_called_once_with(1, with_todos=False)
+    mock_category_repo.get_by_id.assert_called_once_with(1)
 
 
 async def test_get_category_or_404_returns_category_when_found():
@@ -30,7 +30,7 @@ async def test_get_category_or_404_returns_category_when_found():
     result = await service.get_category_or_404(1)
 
     assert result == fake_category
-    mock_category_repo.get_by_id.assert_called_once_with(1, with_todos=False)
+    mock_category_repo.get_by_id.assert_called_once_with(1)
 
 
 async def test_create_category():
@@ -76,7 +76,7 @@ async def test_update_category_with_same_name_does_not_raise_conflict_error():
     result = await service.update_category(1, data)
 
     assert result == fake_category_updated
-    mock_category_repo.get_by_id.assert_called_once_with(1, with_todos=False)
+    mock_category_repo.get_by_id.assert_called_once_with(1)
     mock_category_repo.get_by_name.assert_not_called()
     mock_category_repo.update.assert_called_once_with(fake_category, data)
 
@@ -94,7 +94,7 @@ async def test_update_category_without_name_does_not_call_get_by_name():
     result = await service.update_category(1, data)
 
     assert result == fake_category_updated
-    mock_category_repo.get_by_id.assert_called_once_with(1, with_todos=False)
+    mock_category_repo.get_by_id.assert_called_once_with(1)
     mock_category_repo.get_by_name.assert_not_called()
     mock_category_repo.update.assert_called_once_with(fake_category, data)
 
@@ -112,7 +112,7 @@ async def test_update_category_with_duplicate_name_raises_conflict_error():
     with pytest.raises(ConflictError):
         await service.update_category(2, data)
 
-    mock_category_repo.get_by_id.assert_called_once_with(2, with_todos=False)
+    mock_category_repo.get_by_id.assert_called_once_with(2)
     mock_category_repo.get_by_name.assert_called_once_with("Sport")
 
 
@@ -131,7 +131,7 @@ async def test_update_category_successfully():
     result = await service.update_category(1, data)
 
     assert result == fake_category_updated
-    mock_category_repo.get_by_id.assert_called_once_with(1, with_todos=False)
+    mock_category_repo.get_by_id.assert_called_once_with(1)
     mock_category_repo.get_by_name.assert_called_once_with("House")
     mock_category_repo.update.assert_called_once_with(fake_category, data)
 
@@ -145,5 +145,5 @@ async def test_delete_category_calls_repo_delete_when_found():
 
     await service.delete_category(1)
 
-    mock_category_repo.get_by_id.assert_called_once_with(1, with_todos=False)
+    mock_category_repo.get_by_id.assert_called_once_with(1)
     mock_category_repo.delete.assert_called_once_with(fake_category)

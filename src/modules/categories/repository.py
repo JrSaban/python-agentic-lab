@@ -7,7 +7,6 @@ from collections.abc import Sequence
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from src.modules.categories.models import Category
 from src.modules.categories.schemas import CategoryCreate, CategoryUpdate
@@ -26,12 +25,9 @@ class CategoryRepository:
         result = await self.session.execute(query)
         return result.scalars().all()
 
-    async def get_by_id(self, entity_id: int, with_todos: bool = False) -> Category | None:
+    async def get_by_id(self, entity_id: int) -> Category | None:
         """Récupère une catégorie par son identifiant unique."""
         query = select(Category).where(Category.id == entity_id)
-
-        if with_todos:
-            query = query.options(selectinload(Category.todos))
 
         result = await self.session.execute(query)
         return result.scalar_one_or_none()

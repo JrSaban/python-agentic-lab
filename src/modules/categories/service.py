@@ -22,9 +22,9 @@ class CategoryService:
         total = await self.repository.count(name=name)
         return (categories, total)
 
-    async def get_category_or_404(self, entity_id: int, with_todos: bool = False) -> Category:
+    async def get_category_or_404(self, entity_id: int) -> Category:
         """Récupère une catégorie ou lève une exception HTTP 404."""
-        category = await self.repository.get_by_id(entity_id, with_todos=with_todos)
+        category = await self.repository.get_by_id(entity_id)
         if not category:
             raise NotFoundError(f"Catégorie avec l'ID {entity_id} introuvable.")
         return category
@@ -38,7 +38,7 @@ class CategoryService:
 
     async def update_category(self, entity_id: int, data: CategoryUpdate) -> Category:
         """Met à jour une catégorie existante."""
-        category = await self.get_category_or_404(entity_id, with_todos=False)
+        category = await self.get_category_or_404(entity_id)
 
         if data.name is not None and category.name.lower() != data.name.lower():
             existing = await self.repository.get_by_name(data.name)

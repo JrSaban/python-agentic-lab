@@ -2,7 +2,6 @@
 Routing & Controller Layer pour le domaine Categories.
 """
 
-from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
@@ -14,7 +13,7 @@ from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
 from src.modules.categories.schemas import CategoryCreate, CategoryResponse, CategoryUpdate
 from src.modules.categories.service import CategoryService
-from src.modules.todos.models import Todo
+from src.modules.todos.router import TodoServiceDep
 from src.modules.todos.schemas import TodoResponse
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
@@ -77,16 +76,21 @@ async def get_category(
 
 @router.get(
     "/{category_id}/todos",
-    response_model=list[TodoResponse],
+    response_model=PaginatedResponse[TodoResponse],
     summary="Lister les tâches d'une catégorie",
     description="Récupère toutes les tâches associées à une catégorie.",
 )
 async def list_todos_by_category(
     service: CategoryServiceDep,
+    todo_service: TodoServiceDep,
     category_id: int,
-) -> Sequence[Todo]:
-    category = await service.get_category_or_404(category_id, with_todos=True)
-    return category.todos
+    skip: Annotated[int, Query(ge=0, description="Nombre d'éléments à sauter")] = 0,
+    limit: Annotated[int, Query(ge=1, le=100, description="Nombre max d'éléments")] = 50,
+) -> PaginatedResponse[TodoResponse]:
+    """Récupère toutes les tâches associées à une catégorie."""
+    await service.get_category_or_404(category_id)
+    todos, total = await todo_service.list_todos(skip=skip, limit=limit, category_ids=[category_id])
+    return PaginatedResponse(items=todos, total=total, skip=skip, limit=limit)
 
 
 @router.patch(

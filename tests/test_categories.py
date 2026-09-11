@@ -185,9 +185,9 @@ async def test_get_todos_by_category(client: AsyncClient) -> None:
     response = await client.get(f"/api/v1/categories/{cat_1_id}/todos")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 2
-    assert data[0]["id"] == todo_1.json()["id"]
-    assert data[1]["id"] == todo_2.json()["id"]
+    assert data["total"] == 2
+    assert data["items"][0]["id"] == todo_2.json()["id"]
+    assert data["items"][1]["id"] == todo_1.json()["id"]
 
 
 async def test_get_todos_by_category_empty(client: AsyncClient) -> None:
@@ -198,8 +198,8 @@ async def test_get_todos_by_category_empty(client: AsyncClient) -> None:
     response = await client.get(f"/api/v1/categories/{cat_1_id}/todos")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 0
-    assert data == []
+    assert data["total"] == 0
+    assert data["items"] == []
 
 
 async def test_list_categories_filter_by_name(client: AsyncClient) -> None:
