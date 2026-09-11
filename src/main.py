@@ -1,8 +1,12 @@
+import logging
+import time
+
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
 from src.core.config import settings
 from src.core.exceptions import ConflictError, NotFoundError
+from src.core.logging import setup_logging
 from src.modules.categories.router import router as categories_router
 from src.modules.todos.router import router as todos_router
 
@@ -10,6 +14,9 @@ from src.modules.todos.router import router as todos_router
 Point d'entrée principal de l'application.
 Équivalent conceptuel de bootstrap/app.php + public/index.php dans Laravel.
 """
+
+
+setup_logging()
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -22,6 +29,20 @@ app = FastAPI(
 # Enregistrement des routes de l'API avec préfixe de version (/api/v1)
 app.include_router(todos_router, prefix=settings.API_V1_STR)
 app.include_router(categories_router, prefix=settings.API_V1_STR)
+
+
+logger = logging.getLogger(__name__)
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        f"{request.method} {request.url.path} → {response.status_code} ({duration_ms:.1f}ms)"
+    )
+    return response
 
 
 @app.exception_handler(NotFoundError)
