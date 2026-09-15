@@ -10,6 +10,7 @@ def hash_password(password: str) -> str:
     """Hash a plain text password."""
     return _password_hasher.hash(password)
 
+
 def verify_password(password: str, hashed_password: str) -> bool:
     """Verify a plain text password against a hashed password."""
     try:
@@ -17,4 +18,3 @@ def verify_password(password: str, hashed_password: str) -> bool:
         return True
     except VerifyMismatchError:
         return False
-    
