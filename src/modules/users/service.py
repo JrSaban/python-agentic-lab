@@ -1,0 +1,95 @@
+"""Service Layer (Logique métier pour les Users)."""
+
+from collections.abc import Sequence
+
+from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
+from src.core.security import hash_password, verify_password
+from src.modules.users.models import User
+from src.modules.users.repository import UserRepository
+from src.modules.users.schemas import UserCreate, UserPasswordUpdate, UserUpdate
+
+
+class UserService:
+    def __init__(self, repository: UserRepository) -> None:
+        self.repository = repository
+
+    async def list_users(
+        self,
+        current_user: User,
+        skip: int = 0,
+        limit: int = 100,
+        email: str | None = None,
+        name: str | None = None,
+        pseudo: str | None = None,
+        is_active: bool | None = None,
+        is_admin: bool | None = None,
+    ) -> tuple[Sequence[User], int]:
+        """Get all users with pagination."""
+        if not current_user.is_admin:
+            raise ForbiddenError("Vous n'avez pas l'autorisation de lister les utilisateurs.")
+        users = await self.repository.get_all(
+            skip=skip,
+            limit=limit,
+            email=email,
+            name=name,
+            pseudo=pseudo,
+            is_active=is_active,
+            is_admin=is_admin,
+        )
+        total = await self.repository.count(
+            email=email,
+            name=name,
+            pseudo=pseudo,
+            is_active=is_active,
+            is_admin=is_admin,
+        )
+
+        return (users, total)
+
+    async def get_user_or_404(self, current_user: User, entity_id: int) -> User:
+        """Get a user or raise an HTTP 404 exception."""
+        if not current_user.is_admin and current_user.id != entity_id:
+            raise ForbiddenError("Vous n'avez pas l'autorisation d'accéder à ce user.")
+
+        user = await self.repository.get_by_id(entity_id)
+        if not user:
+            raise NotFoundError(f"User avec l'ID {entity_id} introuvable.")
+        return user
+
+    async def create_user(self, data: UserCreate) -> User:
+        """Create a new user."""
+        user = await self.repository.get_by_email(data.email)
+        if user:
+            raise ConflictError(f"Un utilisateur avec l'email {data.email} existe déjà.")
+
+        hashed_password = hash_password(data.password)
+        return await self.repository.create(data, hashed_password)
+
+    async def update_user(self, current_user: User, entity_id: int, data: UserUpdate) -> User:
+        """Update an existing user."""
+        user = await self.get_user_or_404(current_user, entity_id)
+        return await self.repository.update(user, data)
+
+    async def update_password(self, current_user: User, data: UserPasswordUpdate) -> User:
+        """Update password of a user."""
+        if not verify_password(data.old_password, current_user.hashed_password):
+            raise ForbiddenError("L'ancien mot de passe ne correspond pas")
+
+        hashed_password = hash_password(data.new_password)
+        return await self.repository.update_password(current_user, hashed_password)
+
+    async def set_user_active(self, current_user: User, entity_id: int, is_active: bool) -> User:
+        """Set an user's active status."""
+        if not current_user.is_admin:
+            raise ForbiddenError("Vous n'avez pas l'autorisation de modifier ce user.")
+
+        user = await self.get_user_or_404(current_user, entity_id)
+        return await self.repository.set_active(user, is_active)
+
+    async def set_user_admin(self, current_user: User, entity_id: int, is_admin: bool) -> User:
+        """Set an user's admin status."""
+        if not current_user.is_admin:
+            raise ForbiddenError("Vous n'avez pas l'autorisation de modifier ce user.")
+
+        user = await self.get_user_or_404(current_user, entity_id)
+        return await self.repository.set_admin(user, is_admin)

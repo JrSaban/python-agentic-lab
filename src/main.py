@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
 from src.core.config import settings
-from src.core.exceptions import ConflictError, NotFoundError
+from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from src.core.logging import setup_logging
 from src.modules.categories.router import router as categories_router
 from src.modules.todos.router import router as todos_router
@@ -57,6 +57,14 @@ async def not_found_exception_handler(request: Request, exc: NotFoundError) -> J
 async def conflict_exception_handler(request: Request, exc: ConflictError) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_409_CONFLICT,
+        content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(ForbiddenError)
+async def forbidden_exception_handler(request: Request, exc: ForbiddenError) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
         content={"detail": str(exc)},
     )
 

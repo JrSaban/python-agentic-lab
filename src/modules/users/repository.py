@@ -1,8 +1,9 @@
 """Repository Pattern pour l'accès aux données de User."""
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.users.models import User
@@ -12,6 +13,30 @@ from src.modules.users.schemas import UserCreate, UserUpdate
 class UserRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+
+    async def get_all(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        email: str | None = None,
+        name: str | None = None,
+        pseudo: str | None = None,
+        is_active: bool | None = None,
+        is_admin: bool | None = None,
+    ) -> Sequence[User]:
+        """Get all users"""
+        query = select(User).offset(skip).limit(limit)
+        query = self._apply_filters(
+            query,
+            email=email,
+            name=name,
+            pseudo=pseudo,
+            is_active=is_active,
+            is_admin=is_admin,
+        )
+
+        result = await self.session.execute(query)
+        return result.scalars().all()
 
     async def get_by_id(self, entity_id: int) -> User | None:
         """Get an user by its ID"""
@@ -94,3 +119,48 @@ class UserRepository:
         await self.session.refresh(user)
 
         return user
+
+    async def count(
+        self,
+        email: str | None = None,
+        name: str | None = None,
+        pseudo: str | None = None,
+        is_active: bool | None = None,
+        is_admin: bool | None = None,
+    ) -> int:
+        """Count all users"""
+        query = select(func.count(User.id))
+        query = self._apply_filters(
+            query,
+            email=email,
+            name=name,
+            pseudo=pseudo,
+            is_active=is_active,
+            is_admin=is_admin,
+        )
+        result = await self.session.execute(query)
+        return result.scalar_one()
+
+    def _apply_filters(
+        self,
+        query: Select,
+        email: str | None = None,
+        name: str | None = None,
+        pseudo: str | None = None,
+        is_active: bool | None = None,
+        is_admin: bool | None = None,
+    ) -> Select:
+        """Helper qui applique les filtres sur une requête."""
+        if email is not None:
+            query = query.where(User.email.ilike(f"%{email}%"))
+        if name is not None:
+            query = query.where(
+                User.first_name.ilike(f"%{name}%") | User.last_name.ilike(f"%{name}%")
+            )
+        if pseudo is not None:
+            query = query.where(User.pseudo.ilike(f"%{pseudo}%"))
+        if is_active is not None:
+            query = query.where(User.is_active == is_active)
+        if is_admin is not None:
+            query = query.where(User.is_admin == is_admin)
+        return query
