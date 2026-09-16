@@ -17,3 +17,9 @@ class ForbiddenError(Exception):
     """Représente une action non autorisée."""
 
     pass
+
+
+class UnauthorizedError(Exception):
+    """Représente une action non authentifiée."""
+
+    pass

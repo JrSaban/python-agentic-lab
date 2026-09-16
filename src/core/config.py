@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "todo_db"
 
+    # JWT
+    JWT_SECRET_KEY: str
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
     # URL de connexion directe (optionnelle, surchargée par Docker Compose)
     DATABASE_URL: str | None = None
 

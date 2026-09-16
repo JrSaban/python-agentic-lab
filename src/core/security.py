@@ -1,7 +1,12 @@
 """Security utilities."""
 
+from datetime import UTC, datetime, timedelta
+
+import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+
+from src.core.config import settings
 
 _password_hasher = PasswordHasher()
 
@@ -18,3 +23,16 @@ def verify_password(password: str, hashed_password: str) -> bool:
         return True
     except VerifyMismatchError:
         return False
+
+
+def create_access_token(data: dict) -> str:
+    """Create a JWT access token, valid for ACCESS_TOKEN_EXPIRE_MINUTES minutes."""
+    expire = datetime.now(UTC)
+    expire += timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {**data, "exp": expire}
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
+def decode_access_token(token: str) -> dict:
+    """Decode a JWT access token and return its payload."""
+    return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
