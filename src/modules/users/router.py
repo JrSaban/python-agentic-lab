@@ -2,13 +2,22 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_session
+from src.core.schemas import PaginatedResponse
+from src.modules.auth.router import CurrentUserDep
 from src.modules.users.models import User
 from src.modules.users.repository import UserRepository
-from src.modules.users.schemas import UserCreate, UserResponse
+from src.modules.users.schemas import (
+    UserActiveStatusUpdate,
+    UserAdminStatusUpdate,
+    UserCreate,
+    UserPasswordUpdate,
+    UserResponse,
+    UserUpdate,
+)
 from src.modules.users.service import UserService
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -38,3 +47,140 @@ async def create_user(
     data: UserCreate,
 ) -> User:
     return await service.create_user(data)
+
+
+@router.get(
+    "",
+    response_model=PaginatedResponse[UserResponse],
+    summary="Récupérer tous les utilisateurs",
+    description="""
+        Récupère tous les utilisateurs.
+        Seuls les admins peuvent accéder à cette ressource.
+    """,
+)
+async def list_users(
+    service: UserServiceDep,
+    current_user: CurrentUserDep,
+    skip: Annotated[int, Query(ge=0, description="Nombre d'éléments à sauter")] = 0,
+    limit: Annotated[int, Query(ge=1, le=100, description="Nombre max d'éléments")] = 50,
+    email: Annotated[str | None, Query(min_length=2, description="Filtre sur l'email")] = None,
+    name: Annotated[str | None, Query(min_length=2, description="Filtre sur le nom")] = None,
+    pseudo: Annotated[str | None, Query(min_length=2, description="Filtre sur le pseudo")] = None,
+    is_active: Annotated[bool | None, Query(description="Filtre sur le statut actif")] = None,
+    is_admin: Annotated[bool | None, Query(description="Filtre sur le statut admin")] = None,
+) -> PaginatedResponse[UserResponse]:
+    users, total = await service.list_users(
+        current_user=current_user,
+        skip=skip,
+        limit=limit,
+        email=email,
+        name=name,
+        pseudo=pseudo,
+        is_active=is_active,
+        is_admin=is_admin,
+    )
+    return PaginatedResponse(items=users, total=total, skip=skip, limit=limit)
+
+
+@router.get(
+    "/me",
+    response_model=UserResponse,
+    summary="Afficher l'utilisateur connecté",
+    description="Récupère les détails de l'utilisateur connecté.",
+)
+async def get_me(
+    current_user: CurrentUserDep,
+) -> User:
+    return current_user
+
+
+@router.get(
+    "/{user_id}",
+    response_model=UserResponse,
+    summary="Afficher un utilisateur",
+    description="""
+        Récupère les détails d'un utilisateur par son ID.
+        Les admins peuvent recuperer n'importe quel utilisateur.
+    """,
+)
+async def get_user(
+    service: UserServiceDep,
+    current_user: CurrentUserDep,
+    user_id: int,
+) -> User:
+    return await service.get_user_or_404(current_user=current_user, entity_id=user_id)
+
+
+@router.patch(
+    "/{user_id}",
+    response_model=UserResponse,
+    summary="Mettre à jour un utilisateur",
+    description="""
+        Mets à jour un utilisateur par son ID.
+        Seul l'utilisateur concerné ou un admin peut modifier son profil.
+    """,
+)
+async def update_user(
+    service: UserServiceDep,
+    current_user: CurrentUserDep,
+    user_id: int,
+    data: UserUpdate,
+) -> User:
+    return await service.update_user(current_user=current_user, entity_id=user_id, data=data)
+
+
+@router.patch(
+    "/me/password",
+    response_model=UserResponse,
+    summary="Changer le mot de passe de l'utilisateur connecté",
+    description="Change le mot de passe de l'utilisateur connecté.",
+)
+async def update_password(
+    service: UserServiceDep,
+    current_user: CurrentUserDep,
+    data: UserPasswordUpdate,
+) -> User:
+    return await service.update_password(
+        current_user=current_user,
+        data=data,
+    )
+
+
+@router.patch(
+    "/{user_id}/active",
+    response_model=UserResponse,
+    summary="Activer ou désactiver un utilisateur",
+    description="""
+        Active ou désactive un utilisateur par son ID.
+        Seul un admin peut activer ou désactiver un utilisateur.
+    """,
+)
+async def set_user_active(
+    service: UserServiceDep,
+    current_user: CurrentUserDep,
+    user_id: int,
+    data: UserActiveStatusUpdate,
+) -> User:
+    return await service.set_user_active(
+        current_user=current_user, entity_id=user_id, is_active=data.is_active
+    )
+
+
+@router.patch(
+    "/{user_id}/admin",
+    response_model=UserResponse,
+    summary="Activer ou désactiver le statut admin d'un utilisateur",
+    description="""
+        Active ou désactive le statut admin d'un utilisateur par son ID.
+        Seul un admin peut activer ou désactiver le statut admin d'un utilisateur.
+    """,
+)
+async def set_user_admin(
+    service: UserServiceDep,
+    current_user: CurrentUserDep,
+    user_id: int,
+    data: UserAdminStatusUpdate,
+) -> User:
+    return await service.set_user_admin(
+        current_user=current_user, entity_id=user_id, is_admin=data.is_admin
+    )

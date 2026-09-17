@@ -84,6 +84,12 @@ class UserService:
             raise ForbiddenError("Vous n'avez pas l'autorisation de modifier ce user.")
 
         user = await self.get_user_or_404(current_user, entity_id)
+
+        if not is_active and user.is_admin:
+            total_users_admins = await self.repository.count(is_admin=True)
+            if total_users_admins == 1:
+                raise ForbiddenError("Vous ne pouvez pas désactiver le dernier admin.")
+
         return await self.repository.set_active(user, is_active)
 
     async def set_user_admin(self, current_user: User, entity_id: int, is_admin: bool) -> User:
@@ -92,4 +98,12 @@ class UserService:
             raise ForbiddenError("Vous n'avez pas l'autorisation de modifier ce user.")
 
         user = await self.get_user_or_404(current_user, entity_id)
+
+        if not is_admin and user.is_admin:
+            total_users_admins = await self.repository.count(is_admin=True)
+            if total_users_admins == 1:
+                raise ForbiddenError(
+                    "Vous ne pouvez pas retirer le statut d'admin au dernier admin."
+                )
+
         return await self.repository.set_admin(user, is_admin)

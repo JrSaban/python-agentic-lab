@@ -105,3 +105,11 @@ class UserResponse(UserBase):
         return f"{self.first_name} {self.last_name}"
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserActiveStatusUpdate(BaseModel):
+    is_active: bool = Field(..., description="Statut actif de l'utilisateur")
+
+
+class UserAdminStatusUpdate(BaseModel):
+    is_admin: bool = Field(..., description="Statut admin de l'utilisateur")
