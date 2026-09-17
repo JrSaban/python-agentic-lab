@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from src.core.config import settings
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
 from src.core.logging import setup_logging
+from src.modules.auth.router import router as auth_router
 from src.modules.categories.router import router as categories_router
 from src.modules.todos.router import router as todos_router
 from src.modules.users.router import router as users_router
@@ -28,6 +29,7 @@ app = FastAPI(
 )
 
 # Enregistrement des routes de l'API avec préfixe de version (/api/v1)
+app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(todos_router, prefix=settings.API_V1_STR)
 app.include_router(categories_router, prefix=settings.API_V1_STR)
 app.include_router(users_router, prefix=settings.API_V1_STR)
