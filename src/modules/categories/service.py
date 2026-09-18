@@ -40,7 +40,7 @@ class CategoryService:
         """Met à jour une catégorie existante."""
         category = await self.get_category_or_404(entity_id)
 
-        if data.name is not None and category.name.lower() != data.name.lower():
+        if data.name is not None and category.name.lower() != data.name.lower().strip():
             existing = await self.repository.get_by_name(data.name)
             if existing is not None:
                 raise ConflictError(f"Une catégorie avec le nom {data.name} existe déjà.")

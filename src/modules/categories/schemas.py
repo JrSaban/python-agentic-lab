@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CategoryBase(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     name: str = Field(..., min_length=1, max_length=100, description="Nom de la catégorie")
     color: str = Field(
         default="#FAFAFA", pattern=r"^#[a-fA-F0-9]{6}$", description="Couleur de la catégorie"
@@ -22,6 +24,8 @@ class CategoryCreate(CategoryBase):
 
 
 class CategoryUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     name: str | None = Field(default=None, min_length=1, max_length=100)
     color: str | None = Field(default=None, pattern=r"^#[a-fA-F0-9]{6}$")
 

@@ -27,6 +27,7 @@ class UserService:
         """Get all users with pagination."""
         if not current_user.is_admin:
             raise ForbiddenError("Vous n'avez pas l'autorisation de lister les utilisateurs.")
+
         users = await self.repository.get_all(
             skip=skip,
             limit=limit,
@@ -68,6 +69,12 @@ class UserService:
     async def update_user(self, current_user: User, entity_id: int, data: UserUpdate) -> User:
         """Update an existing user."""
         user = await self.get_user_or_404(current_user, entity_id)
+
+        if data.email is not None and user.email.lower() != data.email.lower().strip():
+            existing = await self.repository.get_by_email(data.email)
+            if existing is not None:
+                raise ConflictError(f"Un utilisateur avec l'email {data.email} existe déjà.")
+
         return await self.repository.update(user, data)
 
     async def update_password(self, current_user: User, data: UserPasswordUpdate) -> User:
@@ -86,7 +93,7 @@ class UserService:
         user = await self.get_user_or_404(current_user, entity_id)
 
         if not is_active and user.is_admin:
-            total_users_admins = await self.repository.count(is_admin=True)
+            total_users_admins = await self.repository.count(is_admin=True, is_active=True)
             if total_users_admins == 1:
                 raise ForbiddenError("Vous ne pouvez pas désactiver le dernier admin.")
 
@@ -100,7 +107,7 @@ class UserService:
         user = await self.get_user_or_404(current_user, entity_id)
 
         if not is_admin and user.is_admin:
-            total_users_admins = await self.repository.count(is_admin=True)
+            total_users_admins = await self.repository.count(is_admin=True, is_active=True)
             if total_users_admins == 1:
                 raise ForbiddenError(
                     "Vous ne pouvez pas retirer le statut d'admin au dernier admin."

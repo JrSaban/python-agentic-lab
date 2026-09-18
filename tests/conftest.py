@@ -1,16 +1,21 @@
+import os
 from collections.abc import AsyncGenerator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.core.database import Base, get_db_session
-from src.main import app
-
 """
 Configuration globale des tests avec pytest (conftest.py).
 Équivalent conceptuel de tests/TestCase.php avec RefreshDatabase dans Laravel.
 """
+
+# Doit être fixé avant l'import de src.main : setup_logging() y lit settings.DEBUG
+# au chargement du module pour choisir le niveau du root logger.
+os.environ.setdefault("DEBUG", "False")
+
+from src.core.database import Base, get_db_session  # noqa: E402
+from src.main import app  # noqa: E402
 
 # Base de données SQLite en mémoire vive (ultra-rapide, isolée par session de test)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
