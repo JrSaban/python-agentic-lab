@@ -12,10 +12,7 @@ if TYPE_CHECKING:
 
 
 class Todo(Base):
-    r"""
-    Modèle SQLAlchemy pour la table 'todos'.
-    Équivalent d'un modèle Eloquent dans Laravel (ex: App\Models\Todo).
-    """
+    """Modèle SQLAlchemy pour la table 'todos'."""
 
     __tablename__ = "todos"
 

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_session
 from src.core.schemas import PaginatedResponse
+from src.modules.auth.router import CurrentUserDep
 from src.modules.categories.repository import CategoryRepository
 from src.modules.todos.models import Todo
 from src.modules.todos.repository import TodoRepository
@@ -40,6 +41,7 @@ TodoServiceDep = Annotated[TodoService, Depends(get_todo_service)]
 )
 async def list_todos(
     service: TodoServiceDep,
+    current_user: CurrentUserDep,
     skip: Annotated[int, Query(ge=0, description="Nombre d'éléments à sauter")] = 0,
     limit: Annotated[int, Query(ge=1, le=100, description="Nombre max d'éléments")] = 50,
     title: Annotated[str | None, Query(min_length=2, description="Filtre sur le titre")] = None,
@@ -51,7 +53,12 @@ async def list_todos(
     ] = None,
 ) -> PaginatedResponse[TodoResponse]:
     todos, total = await service.list_todos(
-        skip=skip, limit=limit, title=title, is_completed=is_completed, category_ids=category_ids
+        current_user=current_user,
+        skip=skip,
+        limit=limit,
+        title=title,
+        is_completed=is_completed,
+        category_ids=category_ids,
     )
 
     return PaginatedResponse(items=todos, total=total, skip=skip, limit=limit)
@@ -66,9 +73,10 @@ async def list_todos(
 )
 async def create_todo(
     service: TodoServiceDep,
+    current_user: CurrentUserDep,
     data: TodoCreate,
 ) -> Todo:
-    return await service.create_todo(data)
+    return await service.create_todo(owner_id=current_user.id, data=data)
 
 
 @router.get(
@@ -79,11 +87,14 @@ async def create_todo(
 )
 async def get_todo(
     service: TodoServiceDep,
+    current_user: CurrentUserDep,
     todo_id: int,
     include: Annotated[list[str] | None, Query()] = None,
 ) -> TodoResponse | TodoDetailResponse:
     with_categories = include is not None and "categories" in include
-    todo = await service.get_todo_or_404(todo_id, with_categories)
+    todo = await service.get_todo_or_404(
+        user=current_user, entity_id=todo_id, with_categories=with_categories
+    )
 
     if with_categories:
         return TodoDetailResponse.model_validate(todo)
@@ -98,10 +109,11 @@ async def get_todo(
 )
 async def update_todo(
     service: TodoServiceDep,
+    current_user: CurrentUserDep,
     todo_id: int,
     data: TodoUpdate,
 ) -> Todo:
-    return await service.update_todo(todo_id, data)
+    return await service.update_todo(user=current_user, entity_id=todo_id, data=data)
 
 
 @router.delete(
@@ -112,6 +124,7 @@ async def update_todo(
 )
 async def delete_todo(
     service: TodoServiceDep,
+    current_user: CurrentUserDep,
     todo_id: int,
 ) -> None:
-    await service.delete_todo(todo_id)
+    await service.delete_todo(user=current_user, entity_id=todo_id)

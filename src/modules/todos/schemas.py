@@ -19,10 +19,7 @@ class TodoBase(BaseModel):
 
 
 class TodoCreate(TodoBase):
-    """
-    Payload reçu lors d'un POST /todos.
-    Équivalent de StoreTodoRequest dans Laravel.
-    """
+    """Payload reçu lors d'un POST /todos."""
 
     category_ids: list[int] = Field(
         default=[],
@@ -58,12 +55,10 @@ class TodoUpdate(BaseModel):
 
 
 class TodoResponse(TodoBase):
-    """
-    Payload sérialisé et retourné au client HTTP.
-    Équivalent de TodoResource::make($todo) dans Laravel.
-    """
+    """Payload sérialisé et retourné au client HTTP."""
 
     id: int
+    owner_id: int
     is_completed: bool
     created_at: datetime
     updated_at: datetime
