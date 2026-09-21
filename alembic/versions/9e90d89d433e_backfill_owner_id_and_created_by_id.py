@@ -33,10 +33,8 @@ def upgrade() -> None:
 
     if first_user is None and (total_todos > 0 or total_categories > 0):
         raise RuntimeError(
-            """
-            Impossible de faire la migration: il y a des todos ou des categories sans utilisateur.
-            Veuillez créer un utilisateur et réessayer.
-            """
+            "Impossible de faire la migration: il y a des todos ou des categories sans utilisateur."
+            " Veuillez créer un utilisateur et réessayer."
         )
 
     connection.execute(
