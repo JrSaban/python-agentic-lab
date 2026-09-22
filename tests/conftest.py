@@ -105,6 +105,24 @@ async def current_user(db_session: AsyncSession) -> User:
 
 
 @pytest.fixture
+async def other_user(db_session: AsyncSession) -> User:
+    """Crée un second utilisateur normal directement en base, pour tester l'isolation
+    entre utilisateurs (aucun client authentifié n'est fourni pour lui : on ne
+    l'utilise que comme propriétaire de données créées via un repository)."""
+    repository = UserRepository(db_session)
+    return await repository.create(
+        UserCreate(
+            email="other@test.com",
+            first_name="Other",
+            last_name="User",
+            password="secret123",
+            confirm_password="secret123",
+        ),
+        hash_password("secret123"),
+    )
+
+
+@pytest.fixture
 async def authenticated_client(client: AsyncClient, current_user: User) -> AsyncClient:
     """Le client de test, mais avec get_current_user déjà surchargé par current_user."""
     app.dependency_overrides[get_current_user] = lambda: current_user
