@@ -163,8 +163,40 @@ async def test_delete_category_by_non_admin_returns_403(authenticated_client: As
     """A non-admin user deleting a category (even their own) → 403."""
     cat_1 = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
 
-    del_res = await authenticated_client.delete(f"/api/v1/categories/{cat_1.json()["id"]}")
+    del_res = await authenticated_client.delete(f"/api/v1/categories/{cat_1.json()['id']}")
     assert del_res.status_code == 403
+
+
+async def test_delete_category_removes_association_but_keeps_todo(
+    authenticated_admin: AsyncClient,
+) -> None:
+    """Deleting a category attached to a todo only removes the association;
+    the todo itself survives, just without that category."""
+    cat = await authenticated_admin.post("/api/v1/categories", json={"name": "Sport"})
+    cat_id = cat.json()["id"]
+    todo = await authenticated_admin.post(
+        "/api/v1/todos", json={"title": "Tache", "category_ids": [cat_id]}
+    )
+    todo_id = todo.json()["id"]
+
+    del_res = await authenticated_admin.delete(f"/api/v1/categories/{cat_id}")
+    assert del_res.status_code == 204
+
+    get_todo = await authenticated_admin.get(f"/api/v1/todos/{todo_id}?include=categories")
+    assert get_todo.status_code == 200
+    assert get_todo.json()["categories"] == []
+
+
+async def test_list_categories_without_token_returns_401(client: AsyncClient) -> None:
+    """GET /categories with no Authorization header at all → 401."""
+    response = await client.get("/api/v1/categories")
+    assert response.status_code == 401
+
+
+async def test_get_category_without_token_returns_401(client: AsyncClient) -> None:
+    """GET /categories/{id} with no Authorization header at all → 401."""
+    response = await client.get("/api/v1/categories/1")
+    assert response.status_code == 401
 
 
 async def test_create_category_duplicate_name_returns_409(
