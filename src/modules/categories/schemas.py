@@ -43,5 +43,6 @@ class CategoryUpdate(BaseModel):
 
 class CategoryResponse(CategoryBase):
     id: int
+    created_by_id: int
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)

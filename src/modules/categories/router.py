@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_session
 from src.core.schemas import PaginatedResponse
+from src.modules.auth.router import CurrentUserDep
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
 from src.modules.categories.schemas import CategoryCreate, CategoryResponse, CategoryUpdate
@@ -39,6 +40,7 @@ CategoryServiceDep = Annotated[CategoryService, Depends(get_category_service)]
 )
 async def list_categories(
     service: CategoryServiceDep,
+    current_user: CurrentUserDep,
     skip: Annotated[int, Query(ge=0, description="Nombre d'éléments à sauter")] = 0,
     limit: Annotated[int, Query(ge=1, le=100, description="Nombre max d'éléments")] = 50,
     name: Annotated[str | None, Query(min_length=2, description="Filtre sur le nom")] = None,
@@ -56,9 +58,10 @@ async def list_categories(
 )
 async def create_category(
     service: CategoryServiceDep,
+    current_user: CurrentUserDep,
     data: CategoryCreate,
 ) -> Category:
-    return await service.create_category(data)
+    return await service.create_category(created_by_id=current_user.id, data=data)
 
 
 @router.get(
@@ -69,6 +72,7 @@ async def create_category(
 )
 async def get_category(
     service: CategoryServiceDep,
+    current_user: CurrentUserDep,
     category_id: int,
 ) -> Category:
     return await service.get_category_or_404(category_id)
@@ -83,13 +87,16 @@ async def get_category(
 async def list_todos_by_category(
     service: CategoryServiceDep,
     todo_service: TodoServiceDep,
+    current_user: CurrentUserDep,
     category_id: int,
     skip: Annotated[int, Query(ge=0, description="Nombre d'éléments à sauter")] = 0,
     limit: Annotated[int, Query(ge=1, le=100, description="Nombre max d'éléments")] = 50,
 ) -> PaginatedResponse[TodoResponse]:
     """Récupère toutes les tâches associées à une catégorie."""
     await service.get_category_or_404(category_id)
-    todos, total = await todo_service.list_todos(skip=skip, limit=limit, category_ids=[category_id])
+    todos, total = await todo_service.list_todos(
+        current_user=current_user, skip=skip, limit=limit, category_ids=[category_id]
+    )
     return PaginatedResponse(items=todos, total=total, skip=skip, limit=limit)
 
 
@@ -101,10 +108,11 @@ async def list_todos_by_category(
 )
 async def update_category(
     service: CategoryServiceDep,
+    current_user: CurrentUserDep,
     category_id: int,
     data: CategoryUpdate,
 ) -> Category:
-    return await service.update_category(category_id, data)
+    return await service.update_category(user=current_user, entity_id=category_id, data=data)
 
 
 @router.delete(
@@ -115,6 +123,7 @@ async def update_category(
 )
 async def delete_category(
     service: CategoryServiceDep,
+    current_user: CurrentUserDep,
     category_id: int,
 ) -> None:
-    await service.delete_category(category_id)
+    await service.delete_category(user=current_user, entity_id=category_id)

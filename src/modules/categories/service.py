@@ -4,10 +4,11 @@ Service Layer (Logique métier pour les Categories).
 
 from collections.abc import Sequence
 
-from src.core.exceptions import ConflictError, NotFoundError
+from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
 from src.modules.categories.schemas import CategoryCreate, CategoryUpdate
+from src.modules.users.models import User
 
 
 class CategoryService:
@@ -29,16 +30,19 @@ class CategoryService:
             raise NotFoundError(f"Catégorie avec l'ID {entity_id} introuvable.")
         return category
 
-    async def create_category(self, data: CategoryCreate) -> Category:
+    async def create_category(self, created_by_id: int, data: CategoryCreate) -> Category:
         """Crée une nouvelle catégorie."""
         category = await self.repository.get_by_name(data.name)
         if category:
             raise ConflictError(f"Une catégorie avec le nom {data.name} existe déjà.")
-        return await self.repository.create(data)
+        return await self.repository.create(created_by_id=created_by_id, data=data)
 
-    async def update_category(self, entity_id: int, data: CategoryUpdate) -> Category:
+    async def update_category(self, user: User, entity_id: int, data: CategoryUpdate) -> Category:
         """Met à jour une catégorie existante."""
         category = await self.get_category_or_404(entity_id)
+
+        if not user.is_admin and category.created_by_id != user.id:
+            raise ForbiddenError("Vous n'avez pas le droit de modifier cette catégorie.")
 
         if data.name is not None and category.name.lower() != data.name.lower().strip():
             existing = await self.repository.get_by_name(data.name)
@@ -47,7 +51,10 @@ class CategoryService:
 
         return await self.repository.update(category, data)
 
-    async def delete_category(self, entity_id: int) -> None:
+    async def delete_category(self, user: User, entity_id: int) -> None:
         """Supprime une categorie existante."""
+        if not user.is_admin:
+            raise ForbiddenError("Vous n'avez pas le droit de supprimer cette catégorie.")
+
         category = await self.get_category_or_404(entity_id)
         await self.repository.delete(category)

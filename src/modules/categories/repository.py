@@ -47,11 +47,12 @@ class CategoryRepository:
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
-    async def create(self, data: CategoryCreate) -> Category:
+    async def create(self, created_by_id: int, data: CategoryCreate) -> Category:
         """Crée et persiste une nouvelle catégorie."""
         category = Category(
             name=data.name,
             color=data.color,
+            created_by_id=created_by_id,
         )
         self.session.add(category)
         # Génère l'ID via PostgreSQL sans commiter la transaction globale

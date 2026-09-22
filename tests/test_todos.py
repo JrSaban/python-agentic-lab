@@ -1,6 +1,5 @@
 """Tests d'intégration des endpoints Todos."""
 
-import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,7 +58,6 @@ async def test_create_todo_empty_title_returns_422(
     assert response.status_code == 422
 
 
-@pytest.mark.xfail(reason="fonctionnalité de catégorie pas encore codée côté service")
 async def test_create_todo_with_categories(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -80,7 +78,6 @@ async def test_create_todo_with_categories(
     assert detail.json()["categories"] == [cat_1.json(), cat_2.json()]
 
 
-@pytest.mark.xfail(reason="fonctionnalité de catégorie pas encore codée côté service")
 async def test_create_todo_ignore_invalid_category_ids(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -203,7 +200,6 @@ async def test_list_todos_filter_by_title(
     assert len(data["items"]) == 1
 
 
-@pytest.mark.xfail(reason="fonctionnalité de catégorie pas encore codée côté service")
 async def test_list_todos_filter_by_category_ids(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -291,7 +287,6 @@ async def test_get_todo_of_another_user_as_admin_success(
     assert response.json()["owner_id"] == other_user.id
 
 
-@pytest.mark.xfail(reason="fonctionnalité de catégorie pas encore codée côté service")
 async def test_get_todo_without_include_has_no_categories(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -306,7 +301,6 @@ async def test_get_todo_without_include_has_no_categories(
     assert "categories" not in response.json()
 
 
-@pytest.mark.xfail(reason="fonctionnalité de catégorie pas encore codée côté service")
 async def test_get_todo_with_include_categories(authenticated_client: AsyncClient) -> None:
     """Getting a todo with its categories included."""
     cat_1 = await authenticated_client.post("/api/v1/categories", json={"name": "Catégorie 1"})
@@ -386,7 +380,6 @@ async def test_patch_todo_of_another_user_returns_404(
     assert response.status_code == 404
 
 
-@pytest.mark.xfail(reason="fonctionnalité de catégorie pas encore codée côté service")
 async def test_update_todo_replaces_categories(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -408,7 +401,6 @@ async def test_update_todo_replaces_categories(
     assert detail.json()["categories"] == [cat_2.json()]
 
 
-@pytest.mark.xfail(reason="fonctionnalité de catégorie pas encore codée côté service")
 async def test_update_todo_clears_categories_with_empty_list(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -430,7 +422,6 @@ async def test_update_todo_clears_categories_with_empty_list(
     assert detail.json()["categories"] == []
 
 
-@pytest.mark.xfail(reason="fonctionnalité de catégorie pas encore codée côté service")
 async def test_update_todo_omits_category_ids_keeps_existing(
     authenticated_client: AsyncClient,
 ) -> None:
