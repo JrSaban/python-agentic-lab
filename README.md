@@ -1,5 +1,7 @@
 # Todo API
 
+[![CI](https://github.com/JrSaban/python-agentic-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/JrSaban/python-agentic-lab/actions/workflows/ci.yml)
+
 A REST API for managing todos and categories, built with **FastAPI** and **Clean Architecture** in Python. Built as a hands-on way to learn Python, FastAPI and SQLAlchemy, coming from a PHP/Laravel background — every module was written and tested from scratch, including JWT authentication, ownership-based authorization, and a generic repository layer using Python 3.12's native generics.
 
 ## Tech stack
