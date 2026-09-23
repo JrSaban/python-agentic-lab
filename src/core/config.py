@@ -1,5 +1,4 @@
-from pydantic import field_validator
-from pydantic import computed_field
+from pydantic import computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,9 +30,7 @@ class Settings(BaseSettings):
     @classmethod
     def validate_jwt_secret_key(cls, v: str) -> str:
         if v.startswith("change-me") or len(v.encode()) < 32:
-            raise ValueError(
-                "JWT_SECRET_KEY must be a 32-char string different from 'change-me'"
-            )
+            raise ValueError("JWT_SECRET_KEY must be a 32-char string different from 'change-me'")
         return v
 
     # URL de connexion directe (optionnelle, surchargée par Docker Compose)
