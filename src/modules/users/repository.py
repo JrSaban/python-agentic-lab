@@ -6,13 +6,14 @@ from datetime import UTC, datetime
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.repository import BaseRepository, FilterParams
 from src.modules.users.models import User
-from src.modules.users.schemas import UserCreate, UserUpdate
+from src.modules.users.schemas import UserCreate
 
 
-class UserRepository:
+class UserRepository(BaseRepository[User]):
     def __init__(self, session: AsyncSession) -> None:
-        self.session = session
+        super().__init__(session, User)
 
     async def get_all(
         self,
@@ -25,7 +26,7 @@ class UserRepository:
         is_admin: bool | None = None,
     ) -> Sequence[User]:
         """Get all users"""
-        query = select(User).offset(skip).limit(limit)
+        query = select(User).order_by(User.id.desc())
         query = self._apply_filters(
             query,
             email=email,
@@ -35,15 +36,7 @@ class UserRepository:
             is_admin=is_admin,
         )
 
-        result = await self.session.execute(query)
-        return result.scalars().all()
-
-    async def get_by_id(self, entity_id: int) -> User | None:
-        """Get an user by its ID"""
-        query = select(User).where(User.id == entity_id)
-
-        result = await self.session.execute(query)
-        return result.scalar_one_or_none()
+        return await self.paginate(query, skip, limit)
 
     async def get_by_email(self, email: str) -> User | None:
         """Get an user by its email"""
@@ -61,18 +54,6 @@ class UserRepository:
             pseudo=data.pseudo,
             hashed_password=hashed_password,
         )
-
-        self.session.add(user)
-        await self.session.flush()
-        await self.session.refresh(user)
-
-        return user
-
-    async def update(self, user: User, data: UserUpdate) -> User:
-        """Update an existing user."""
-        update_data = data.model_dump(exclude_unset=True)
-        for field, value in update_data.items():
-            setattr(user, field, value)
 
         self.session.add(user)
         await self.session.flush()
@@ -138,8 +119,8 @@ class UserRepository:
             is_active=is_active,
             is_admin=is_admin,
         )
-        result = await self.session.execute(query)
-        return result.scalar_one()
+
+        return await self.count_query(query)
 
     def _apply_filters(
         self,
@@ -151,16 +132,18 @@ class UserRepository:
         is_admin: bool | None = None,
     ) -> Select:
         """Helper qui applique les filtres sur une requête."""
-        if email is not None:
-            query = query.where(User.email.ilike(f"%{email}%"))
+        query = self._apply_filter_params(
+            query,
+            [
+                FilterParams(column=User.email, value=email, op="ilike"),
+                FilterParams(column=User.pseudo, value=pseudo, op="ilike"),
+                FilterParams(column=User.is_active, value=is_active, op="eq"),
+                FilterParams(column=User.is_admin, value=is_admin, op="eq"),
+            ],
+        )
+
         if name is not None:
             query = query.where(
                 User.first_name.ilike(f"%{name}%") | User.last_name.ilike(f"%{name}%")
             )
-        if pseudo is not None:
-            query = query.where(User.pseudo.ilike(f"%{pseudo}%"))
-        if is_active is not None:
-            query = query.where(User.is_active == is_active)
-        if is_admin is not None:
-            query = query.where(User.is_admin == is_admin)
         return query

@@ -9,14 +9,15 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.core.repository import BaseRepository, FilterParams
 from src.modules.categories.models import Category
 from src.modules.todos.models import Todo
 from src.modules.todos.schemas import TodoCreate, TodoUpdate
 
 
-class TodoRepository:
+class TodoRepository(BaseRepository[Todo]):
     def __init__(self, session: AsyncSession) -> None:
-        self.session = session
+        super().__init__(session, Todo)
 
     async def get_all(
         self,
@@ -28,7 +29,7 @@ class TodoRepository:
         category_ids: list[int] | None = None,
     ) -> Sequence[Todo]:
         """Récupère une liste paginée de tâches."""
-        query = select(Todo).offset(skip).limit(limit).order_by(Todo.id.desc())
+        query = select(Todo).order_by(Todo.id.desc())
         query = self._apply_filters(
             query,
             owner_id=owner_id,
@@ -37,10 +38,9 @@ class TodoRepository:
             category_ids=category_ids,
         )
 
-        result = await self.session.execute(query)
-        return result.scalars().all()
+        return await self.paginate(query, skip, limit)
 
-    async def get_by_id(
+    async def get_by_id(  # pyrefly: ignore[bad-override]
         self, entity_id: int, *, owner_id: int | None, with_categories: bool = False
     ) -> Todo | None:
         """Récupère une tâche par son identifiant unique."""
@@ -69,7 +69,7 @@ class TodoRepository:
         await self.session.refresh(todo)
         return todo
 
-    async def update(
+    async def update(  # pyrefly: ignore[bad-override]
         self, todo: Todo, data: TodoUpdate, categories: Sequence[Category] | None = None
     ) -> Todo:
         """Met à jour une tâche existante avec les champs fournis."""
@@ -84,11 +84,6 @@ class TodoRepository:
         await self.session.flush()
         await self.session.refresh(todo)
         return todo
-
-    async def delete(self, todo: Todo) -> None:
-        """Supprime une tâche de la base de données."""
-        await self.session.delete(todo)
-        await self.session.flush()
 
     async def count(
         self,
@@ -106,8 +101,7 @@ class TodoRepository:
             category_ids=category_ids,
         )
 
-        result = await self.session.execute(query)
-        return result.scalar_one()
+        return await self.count_query(query)
 
     def _apply_filters(
         self,
@@ -118,12 +112,15 @@ class TodoRepository:
         category_ids: list[int] | None = None,
     ) -> Select:
         """Helper qui applique les filtres sur une requête."""
-        if owner_id is not None:
-            query = query.where(Todo.owner_id == owner_id)
-        if title is not None:
-            query = query.where(Todo.title.ilike(f"%{title}%"))
-        if is_completed is not None:
-            query = query.where(Todo.is_completed == is_completed)
+        query = self._apply_filter_params(
+            query,
+            [
+                FilterParams(column=Todo.owner_id, value=owner_id, op="eq"),
+                FilterParams(column=Todo.title, value=title, op="ilike"),
+                FilterParams(column=Todo.is_completed, value=is_completed, op="eq"),
+            ],
+        )
+
         if category_ids is not None:
             query = query.where(Todo.categories.any(Category.id.in_(category_ids)))
         return query

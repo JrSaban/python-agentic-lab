@@ -18,7 +18,6 @@ class Category(Base):
 
     __tablename__ = "categories"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, index=True)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
     color: Mapped[str] = mapped_column(String(7), nullable=False, default="#FAFAFA")

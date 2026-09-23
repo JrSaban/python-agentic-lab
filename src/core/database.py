@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from src.core.config import settings
 
@@ -34,12 +34,9 @@ async_session_factory = async_sessionmaker(
 
 # 3. La Classe de Base Déclarative : Tous les modèles (tables) hériteront de cette classe
 class Base(AsyncAttrs, DeclarativeBase):
-    """
-    Classe de base dont héritent tous les modèles SQLAlchemy du projet.
-    Équivalent de la classe Model de Laravel Eloquent.
-    """
+    """Classe de base dont héritent tous les modèles SQLAlchemy du projet."""
 
-    pass
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True, index=True)
 
 
 # 4. Dépendance FastAPI pour injecter la session BDD par requête
