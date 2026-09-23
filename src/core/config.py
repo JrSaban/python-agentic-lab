@@ -30,7 +30,10 @@ class Settings(BaseSettings):
     @classmethod
     def validate_jwt_secret_key(cls, v: str) -> str:
         if v.startswith("change-me") or len(v.encode()) < 32:
-            raise ValueError("JWT_SECRET_KEY must be a 32-char string different from 'change-me'")
+            raise ValueError(
+                "JWT_SECRET_KEY must be at least 32 bytes and must not be the "
+                "'change-me' placeholder"
+            )
         return v
 
     # URL de connexion directe (optionnelle, surchargée par Docker Compose)
