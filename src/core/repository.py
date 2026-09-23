@@ -59,15 +59,15 @@ class BaseRepository[ModelT: Base]:
 
     def _apply_filter_params(self, query: Select, filters: list[FilterParams]) -> Select:
         """Apply filters to a query"""
-        for filter in filters:
-            if filter.value is None:
+        for filter_param in filters:
+            if filter_param.value is None:
                 continue
 
-            match filter.op:
+            match filter_param.op:
                 case "eq":
-                    query = query.where(filter.column == filter.value)
+                    query = query.where(filter_param.column == filter_param.value)
                 case "ilike":
-                    query = query.where(filter.column.ilike(f"%{filter.value}%"))
+                    query = query.where(filter_param.column.ilike(f"%{filter_param.value}%"))
                 case _:
-                    raise ValueError(f"Unsupported operator: {filter.op}")
+                    raise ValueError(f"Unsupported operator: {filter_param.op}")
         return query
