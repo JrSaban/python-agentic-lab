@@ -10,6 +10,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          cache-suffix: lint
       - run: uv sync
       - run: uv run ruff check .
 
@@ -18,6 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          cache-suffix: format
       - run: uv sync
       - run: uv run ruff format --check .
 
@@ -26,6 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          cache-suffix: test
       - run: uv sync
       - run: uv run pytest
 
@@ -50,6 +56,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          cache-suffix: migrations
       - run: uv sync
       - run: uv run alembic upgrade head
 
