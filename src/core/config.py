@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -25,6 +26,15 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def validate_jwt_secret_key(cls, v: str) -> str:
+        if v.startswith("change-me") or len(v.encode()) < 32:
+            raise ValueError(
+                "JWT_SECRET_KEY must be a 32-char string different from 'change-me'"
+            )
+        return v
 
     # URL de connexion directe (optionnelle, surchargée par Docker Compose)
     DATABASE_URL: str | None = None
