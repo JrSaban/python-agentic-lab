@@ -220,18 +220,27 @@ async def test_create_category_duplicate_name_returns_409(
 
 async def test_create_category_concurrent_same_name_no_duplicate() -> None:
     """Two concurrent requests creating a category with the same name must not both
-    succeed. `get_by_name` alone can't prevent this: with two separate sessions
-    (two separate connections, like two real HTTP requests), both can pass the
-    check before either has written anything. The database's unique constraint on
-    `Category.name` is the real guard, and `create_category` must translate the
-    resulting IntegrityError into a clean ConflictError instead of leaking it."""
+    succeed. The database's unique constraint on `Category.name` is the real guard,
+    and `create_category` must translate the resulting IntegrityError into a clean
+    ConflictError instead of leaking it."""
 
-    async def attempt() -> Category | Exception:
+    write_lock = asyncio.Lock()
+
+    async def attempt(name: str) -> Category | Exception:
         async with session_factory() as session:
-            service = CategoryService(CategoryRepository(session))
+            repository = CategoryRepository(session)
+            original_create = repository.create
+
+            async def create_serialized(*args, **kwargs) -> Category:
+                async with write_lock:
+                    return await original_create(*args, **kwargs)
+
+            repository.create = create_serialized
+
+            service = CategoryService(repository)
             try:
                 category = await service.create_category(
-                    created_by_id=1, data=CategoryCreate(name="Sport")
+                    created_by_id=1, data=CategoryCreate(name=name)
                 )
                 await session.commit()
                 return category
@@ -239,10 +248,9 @@ async def test_create_category_concurrent_same_name_no_duplicate() -> None:
                 await session.rollback()
                 return exc
 
-    results = await asyncio.gather(attempt(), attempt())
+    results = await asyncio.gather(attempt("Sport"), attempt("sport"))
 
-    # Whichever attempt loses the race must never surface a raw IntegrityError —
-    # that's the actual bug: today it does, because nothing catches it.
+    # Whichever attempt loses the race must never surface a raw IntegrityError
     raw_integrity_errors = [r for r in results if isinstance(r, IntegrityError)]
     assert not raw_integrity_errors, (
         f"IntegrityError leaked out of create_category instead of being "

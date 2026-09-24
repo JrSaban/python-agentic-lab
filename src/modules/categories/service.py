@@ -4,6 +4,8 @@ Service Layer (Logique métier pour les Categories).
 
 from collections.abc import Sequence
 
+from sqlalchemy.exc import IntegrityError
+
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
@@ -32,10 +34,10 @@ class CategoryService:
 
     async def create_category(self, created_by_id: int, data: CategoryCreate) -> Category:
         """Crée une nouvelle catégorie."""
-        category = await self.repository.get_by_name(data.name)
-        if category:
-            raise ConflictError(f"Une catégorie avec le nom {data.name} existe déjà.")
-        return await self.repository.create(created_by_id=created_by_id, data=data)
+        try:
+            return await self.repository.create(created_by_id=created_by_id, data=data)
+        except IntegrityError:
+            raise ConflictError(f"Une catégorie avec le nom {data.name} existe déjà.") from None
 
     async def update_category(self, user: User, entity_id: int, data: CategoryUpdate) -> Category:
         """Met à jour une catégorie existante."""
@@ -44,12 +46,10 @@ class CategoryService:
         if not user.is_admin and category.created_by_id != user.id:
             raise ForbiddenError("Vous n'avez pas le droit de modifier cette catégorie.")
 
-        if data.name is not None and category.name.lower() != data.name.lower().strip():
-            existing = await self.repository.get_by_name(data.name)
-            if existing is not None:
-                raise ConflictError(f"Une catégorie avec le nom {data.name} existe déjà.")
-
-        return await self.repository.update(category, data)
+        try:
+            return await self.repository.update(category, data)
+        except IntegrityError:
+            raise ConflictError(f"Une catégorie avec le nom {data.name} existe déjà.") from None
 
     async def delete_category(self, user: User, entity_id: int) -> None:
         """Supprime une categorie existante."""
