@@ -24,7 +24,7 @@ def upgrade() -> None:
     """Upgrade schema."""
     op.drop_index(op.f("ix_categories_name"), table_name="categories")
     op.create_index(
-        op.f("uq_categories_name_lower"), "categories", [func.lower(sa.column("name"))], unique=True
+        op.f("uq_categories_name_lower"), "categories", [sa.literal_column("lower(name)")], unique=True
     )
 
 
