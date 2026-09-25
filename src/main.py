@@ -1,4 +1,5 @@
 import time
+import uuid
 
 import structlog
 from fastapi import FastAPI, Request, status
@@ -36,14 +37,19 @@ app.include_router(users_router, prefix=settings.API_V1_STR)
 
 
 logger = structlog.get_logger()
+REQUEST_ID_HEADER = "X-Request-ID"
 
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    request_id = request.headers.get(REQUEST_ID_HEADER) or str(uuid.uuid4())
+    structlog.contextvars.bind_contextvars(request_id=request_id)
+
     start = time.perf_counter()
     response = await call_next(request)
     duration_ms = (time.perf_counter() - start) * 1000
 
+    response.headers[REQUEST_ID_HEADER] = request_id
     logger.info(
         "request_completed",
         method=request.method,
@@ -51,6 +57,7 @@ async def log_requests(request: Request, call_next):
         status_code=response.status_code,
         duration_ms=round(duration_ms, 1),
     )
+    structlog.contextvars.clear_contextvars()
     return response
 
 
