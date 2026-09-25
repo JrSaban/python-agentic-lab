@@ -1,6 +1,6 @@
-import logging
 import time
 
+import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
@@ -35,7 +35,7 @@ app.include_router(categories_router, prefix=settings.API_V1_STR)
 app.include_router(users_router, prefix=settings.API_V1_STR)
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 @app.middleware("http")
@@ -43,8 +43,13 @@ async def log_requests(request: Request, call_next):
     start = time.perf_counter()
     response = await call_next(request)
     duration_ms = (time.perf_counter() - start) * 1000
+
     logger.info(
-        f"{request.method} {request.url.path} → {response.status_code} ({duration_ms:.1f}ms)"
+        "request_completed",
+        method=request.method,
+        path=request.url.path,
+        status_code=response.status_code,
+        duration_ms=round(duration_ms, 1),
     )
     return response
 
