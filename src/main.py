@@ -40,9 +40,18 @@ logger = structlog.get_logger()
 REQUEST_ID_HEADER = "X-Request-ID"
 
 
+def _get_request_id(request: Request) -> str:
+    """Extract request ID from header or generate a new one."""
+    incoming = request.headers.get(REQUEST_ID_HEADER)
+    if incoming and 0 < len(incoming) <= 64:
+        return incoming
+    return str(uuid.uuid4())
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    request_id = request.headers.get(REQUEST_ID_HEADER) or str(uuid.uuid4())
+    structlog.contextvars.clear_contextvars()
+    request_id = _get_request_id(request)
     structlog.contextvars.bind_contextvars(request_id=request_id)
 
     start = time.perf_counter()
@@ -57,7 +66,6 @@ async def log_requests(request: Request, call_next):
         status_code=response.status_code,
         duration_ms=round(duration_ms, 1),
     )
-    structlog.contextvars.clear_contextvars()
     return response
 
 
