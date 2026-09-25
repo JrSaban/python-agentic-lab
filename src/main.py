@@ -43,7 +43,7 @@ REQUEST_ID_HEADER = "X-Request-ID"
 def _get_request_id(request: Request) -> str:
     """Extract request ID from header or generate a new one."""
     incoming = request.headers.get(REQUEST_ID_HEADER)
-    if incoming and 0 < len(incoming) <= 64:
+    if incoming and len(incoming) <= 64:
         return incoming
     return str(uuid.uuid4())
 
