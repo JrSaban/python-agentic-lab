@@ -39,11 +39,3 @@ fix: catch IntegrityError on category create
   ```
 
 - If the PR includes an Alembic migration, say so in the "How to test" section (`uv run alembic upgrade head`).
-
-### Stacked PRs
-
-When a branch depends on another unmerged branch (e.g. it needs its migrations), branch off it and open the PR with that branch as its base, not `main`.
-
-- Merge from the bottom up: the PR targeting `main` first.
-- Use **Create a merge commit** for stacked PRs. Squash and rebase merges rewrite commit SHAs, so the child PR would need a `git rebase --onto` afterwards.
-- Never delete a parent branch manually while a child PR is open. Head branches are deleted automatically after merge, which retargets the child PR to `main`.
