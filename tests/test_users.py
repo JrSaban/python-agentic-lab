@@ -48,6 +48,32 @@ async def test_create_user_duplicate_email_returns_409(client: AsyncClient) -> N
     assert response.status_code == 409
 
 
+async def test_create_user_duplicate_pseudo_returns_409(client: AsyncClient) -> None:
+    """Two registrations with the same pseudo → the second one returns 409."""
+    first_user = {
+        "email": "test@gmail.com",
+        "first_name": "John",
+        "last_name": "Doe",
+        "pseudo": "JohnDoe",
+        "password": "password",
+        "confirm_password": "password",
+    }
+    second_user = {
+        "email": "jane@gmail.com",
+        "first_name": "Jane",
+        "last_name": "Doe",
+        "pseudo": "JohnDoe",
+        "password": "password",
+        "confirm_password": "password",
+    }
+
+    response = await client.post("/api/v1/users", json=first_user)
+    assert response.status_code == 201
+
+    response = await client.post("/api/v1/users", json=second_user)
+    assert response.status_code == 409
+
+
 async def test_create_user_missing_fields_returns_422(client: AsyncClient) -> None:
     """Registration with missing required fields → 422."""
     first_payload = {
