@@ -2,6 +2,8 @@
 
 from collections.abc import Sequence
 
+from sqlalchemy.exc import IntegrityError
+
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from src.core.security import hash_password, verify_password
 from src.modules.users.models import User
@@ -59,23 +61,32 @@ class UserService:
 
     async def create_user(self, data: UserCreate) -> User:
         """Create a new user."""
-        user = await self.repository.get_by_email(data.email)
-        if user:
-            raise ConflictError(f"Un utilisateur avec l'email {data.email} existe déjà.")
-
         hashed_password = hash_password(data.password)
-        return await self.repository.create(data, hashed_password)
+        try:
+            return await self.repository.create(data, hashed_password)
+        except IntegrityError as e:
+            if "uq_users_email_lower" in str(e):
+                raise ConflictError(f"Un utilisateur avec l'email {data.email} existe déjà.") from e
+            if "uq_users_pseudo_lower" in str(e):
+                raise ConflictError(
+                    f"Un utilisateur avec le pseudo {data.pseudo} existe déjà."
+                ) from e
+            raise
 
     async def update_user(self, current_user: User, entity_id: int, data: UserUpdate) -> User:
         """Update an existing user."""
         user = await self.get_user_or_404(current_user, entity_id)
 
-        if data.email is not None and user.email.lower() != data.email.lower().strip():
-            existing = await self.repository.get_by_email(data.email)
-            if existing is not None:
-                raise ConflictError(f"Un utilisateur avec l'email {data.email} existe déjà.")
-
-        return await self.repository.update(user, data)
+        try:
+            return await self.repository.update(user, data)
+        except IntegrityError as e:
+            if "uq_users_email_lower" in str(e):
+                raise ConflictError(f"Un utilisateur avec l'email {data.email} existe déjà.") from e
+            if "uq_users_pseudo_lower" in str(e):
+                raise ConflictError(
+                    f"Un utilisateur avec le pseudo {data.pseudo} existe déjà."
+                ) from e
+            raise
 
     async def update_password(self, current_user: User, data: UserPasswordUpdate) -> User:
         """Update password of a user."""

@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from src.modules.users.models import User
@@ -124,17 +125,16 @@ async def test_create_user_success(mock_hash_password):
         is_admin=False,
         hashed_password="hashedpassword",
     )
-    mock_user_repo.get_by_email.return_value = None
     mock_user_repo.create.return_value = fake_user
 
     result = await service.create_user(user_data)
 
     assert result == fake_user
-    mock_user_repo.get_by_email.assert_called_once_with(user_data.email)
     mock_user_repo.create.assert_called_once_with(user_data, "hashedpassword")
 
 
-async def test_create_user_with_existing_email_raises_conflict_error():
+@patch("src.modules.users.service.hash_password", return_value="hashedpassword")
+async def test_create_user_with_existing_email_raises_conflict_error(mock_hash_password):
     mock_user_repo = AsyncMock()
     service = UserService(repository=mock_user_repo)
     user_data = UserCreate(
@@ -144,22 +144,36 @@ async def test_create_user_with_existing_email_raises_conflict_error():
         password="password",
         confirm_password="password",
     )
-    fake_user = User(
-        id=1,
-        email="test@gmail.com",
-        first_name="Jane",
-        last_name="Doe",
-        is_active=True,
-        is_admin=False,
-        hashed_password="hashedpassword",
+    mock_user_repo.create.side_effect = IntegrityError(
+        "stmt", {}, Exception("uq_users_email_lower")
     )
-    mock_user_repo.get_by_email.return_value = fake_user
 
     with pytest.raises(ConflictError):
         await service.create_user(user_data)
 
-    mock_user_repo.get_by_email.assert_called_once_with(user_data.email)
-    mock_user_repo.create.assert_not_called()
+    mock_user_repo.create.assert_called_once_with(user_data, "hashedpassword")
+
+
+@patch("src.modules.users.service.hash_password", return_value="hashedpassword")
+async def test_create_user_with_existing_pseudo_raises_conflict_error(mock_hash_password):
+    mock_user_repo = AsyncMock()
+    service = UserService(repository=mock_user_repo)
+    user_data = UserCreate(
+        email="test@gmail.com",
+        first_name="John",
+        last_name="Doe",
+        pseudo="test",
+        password="password",
+        confirm_password="password",
+    )
+    mock_user_repo.create.side_effect = IntegrityError(
+        "stmt", {}, Exception("uq_users_pseudo_lower")
+    )
+
+    with pytest.raises(ConflictError):
+        await service.create_user(user_data)
+
+    mock_user_repo.create.assert_called_once_with(user_data, "hashedpassword")
 
 
 async def test_update_user_success():
@@ -283,26 +297,40 @@ async def test_update_user_with_existing_email_raises_conflict_error():
         first_name="Jane",
         last_name="Paul",
     )
-    existing_user = User(
-        id=2,
-        email="jane@gmail.com",
-        first_name="Jane",
-        last_name="Doe",
-        is_active=True,
-        is_admin=False,
-    )
     mock_user_repo.get_by_id.return_value = current_user
-    mock_user_repo.get_by_email.return_value = existing_user
+    mock_user_repo.update.side_effect = IntegrityError(
+        "stmt", {}, Exception("uq_users_email_lower")
+    )
 
     with pytest.raises(ConflictError):
         await service.update_user(current_user, current_user.id, user_data)
 
-    assert current_user.id != existing_user.id
-    assert current_user.email != existing_user.email
-    assert user_data.email == existing_user.email
     mock_user_repo.get_by_id.assert_called_once_with(current_user.id)
-    mock_user_repo.get_by_email.assert_called_once_with(user_data.email)
-    mock_user_repo.update.assert_not_called()
+    mock_user_repo.update.assert_called_once_with(current_user, user_data)
+
+
+async def test_update_user_with_existing_pseudo_raises_conflict_error():
+    mock_user_repo = AsyncMock()
+    service = UserService(repository=mock_user_repo)
+    current_user = User(
+        id=1,
+        email="test@gmail.com",
+        first_name="John",
+        last_name="Doe",
+        is_active=True,
+        is_admin=False,
+    )
+    user_data = UserUpdate(pseudo="new_pseudo")
+    mock_user_repo.get_by_id.return_value = current_user
+    mock_user_repo.update.side_effect = IntegrityError(
+        "stmt", {}, Exception("uq_users_pseudo_lower")
+    )
+
+    with pytest.raises(ConflictError):
+        await service.update_user(current_user, current_user.id, user_data)
+
+    mock_user_repo.get_by_id.assert_called_once_with(current_user.id)
+    mock_user_repo.update.assert_called_once_with(current_user, user_data)
 
 
 @patch("src.modules.users.service.hash_password", return_value="hashed_new_password")
@@ -598,3 +626,20 @@ async def test_set_user_no_admin_last_admin_raises_forbidden_error():
     mock_user_repo.get_by_id.assert_called_once_with(admin_user.id)
     mock_user_repo.count.assert_called_once_with(is_admin=True, is_active=True)
     mock_user_repo.set_admin.assert_not_called()
+
+
+async def test_create_user_with_unrelated_integrity_error_reraises():
+    mock_user_repo = AsyncMock()
+    service = UserService(repository=mock_user_repo)
+    user_data = UserCreate(
+        email="test@gmail.com",
+        first_name="John",
+        last_name="Doe",
+        password="password",
+        confirm_password="password",
+    )
+    mock_user_repo.create.side_effect = IntegrityError(
+        "stmt", {}, Exception("some other constraint")
+    )
+    with pytest.raises(IntegrityError):
+        await service.create_user(user_data)
