@@ -643,4 +643,3 @@ async def test_create_user_with_unrelated_integrity_error_reraises():
     )
     with pytest.raises(IntegrityError):
         await service.create_user(user_data)
-
