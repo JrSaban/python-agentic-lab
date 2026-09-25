@@ -4,10 +4,9 @@ from typing import Annotated
 
 import jwt
 from fastapi import APIRouter, Depends
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import settings
 from src.core.database import get_db_session
 from src.core.exceptions import UnauthorizedError
 from src.core.security import decode_access_token
@@ -18,16 +17,16 @@ from src.modules.users.repository import UserRepository
 
 router = APIRouter(tags=["Auth"])
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/login")
+bearer_scheme = HTTPBearer()
 
 
 # Dependency pour injecter l'utilisateur connecté
 async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> User:
     try:
-        payload = decode_access_token(token)
+        payload = decode_access_token(credentials.credentials)
     except jwt.PyJWTError as jwt_error:
         raise UnauthorizedError("Token invalide ou expiré.") from jwt_error
 

@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from src.modules.categories.models import Category
@@ -37,7 +38,6 @@ async def test_get_category_or_404_returns_category_when_found():
 async def test_create_category(current_user: User):
     mock_category_repo = AsyncMock()
     fake_category = Category(id=1, name="Test")
-    mock_category_repo.get_by_name.return_value = None
     mock_category_repo.create.return_value = fake_category
 
     service = CategoryService(repository=mock_category_repo)
@@ -46,14 +46,12 @@ async def test_create_category(current_user: User):
     result = await service.create_category(created_by_id=current_user.id, data=data)
 
     assert result == fake_category
-    mock_category_repo.get_by_name.assert_called_once_with("Test")
     mock_category_repo.create.assert_called_once_with(created_by_id=current_user.id, data=data)
 
 
 async def test_create_duplicate_category_raises_conflict_error(current_user: User):
-    fake_category = Category(id=1, name="Sport")
     mock_category_repo = AsyncMock()
-    mock_category_repo.get_by_name.return_value = fake_category
+    mock_category_repo.create.side_effect = IntegrityError("stmt", {}, Exception("orig"))
 
     service = CategoryService(repository=mock_category_repo)
     data = CategoryCreate(name="Sport")
@@ -61,53 +59,12 @@ async def test_create_duplicate_category_raises_conflict_error(current_user: Use
     with pytest.raises(ConflictError):
         await service.create_category(created_by_id=current_user.id, data=data)
 
-    mock_category_repo.get_by_name.assert_called_once_with("Sport")
-
-
-async def test_update_category_with_same_name_does_not_raise_conflict_error(current_user: User):
-    fake_category = Category(id=1, created_by_id=current_user.id, name="Sport")
-    fake_category_updated = Category(id=1, created_by_id=current_user.id, name="sport")
-    mock_category_repo = AsyncMock()
-    mock_category_repo.get_by_id.return_value = fake_category
-    mock_category_repo.update.return_value = fake_category_updated
-
-    service = CategoryService(repository=mock_category_repo)
-    data = CategoryUpdate(name="sport")
-
-    result = await service.update_category(user=current_user, entity_id=1, data=data)
-
-    assert result == fake_category_updated
-    mock_category_repo.get_by_id.assert_called_once_with(1)
-    mock_category_repo.get_by_name.assert_not_called()
-    mock_category_repo.update.assert_called_once_with(fake_category, data)
-
-
-async def test_update_category_without_name_does_not_call_get_by_name(current_user: User):
-    fake_category = Category(id=1, created_by_id=current_user.id, name="Sport", color="#ff0000")
-    fake_category_updated = Category(
-        id=1, created_by_id=current_user.id, name="Sport", color="#0000ff"
-    )
-    mock_category_repo = AsyncMock()
-    mock_category_repo.get_by_id.return_value = fake_category
-    mock_category_repo.update.return_value = fake_category_updated
-
-    service = CategoryService(repository=mock_category_repo)
-    data = CategoryUpdate(color="#0000ff")
-
-    result = await service.update_category(user=current_user, entity_id=1, data=data)
-
-    assert result == fake_category_updated
-    mock_category_repo.get_by_id.assert_called_once_with(1)
-    mock_category_repo.get_by_name.assert_not_called()
-    mock_category_repo.update.assert_called_once_with(fake_category, data)
-
 
 async def test_update_category_with_duplicate_name_raises_conflict_error(current_user: User):
-    fake_category = Category(id=1, created_by_id=current_user.id, name="Sport")
-    fake_category_2 = Category(id=2, created_by_id=current_user.id, name="House")
+    fake_category = Category(id=2, created_by_id=current_user.id, name="House")
     mock_category_repo = AsyncMock()
-    mock_category_repo.get_by_id.return_value = fake_category_2
-    mock_category_repo.get_by_name.return_value = fake_category
+    mock_category_repo.get_by_id.return_value = fake_category
+    mock_category_repo.update.side_effect = IntegrityError("stmt", {}, Exception("orig"))
 
     service = CategoryService(repository=mock_category_repo)
     data = CategoryUpdate(name="Sport")
@@ -116,7 +73,6 @@ async def test_update_category_with_duplicate_name_raises_conflict_error(current
         await service.update_category(user=current_user, entity_id=2, data=data)
 
     mock_category_repo.get_by_id.assert_called_once_with(2)
-    mock_category_repo.get_by_name.assert_called_once_with("Sport")
 
 
 async def test_update_category_successfully(current_user: User):
@@ -125,7 +81,6 @@ async def test_update_category_successfully(current_user: User):
     fake_category_updated = Category(id=1, created_by_id=current_user.id, name="House")
 
     mock_category_repo.get_by_id.return_value = fake_category
-    mock_category_repo.get_by_name.return_value = None
     mock_category_repo.update.return_value = fake_category_updated
 
     service = CategoryService(repository=mock_category_repo)
@@ -135,7 +90,6 @@ async def test_update_category_successfully(current_user: User):
 
     assert result == fake_category_updated
     mock_category_repo.get_by_id.assert_called_once_with(1)
-    mock_category_repo.get_by_name.assert_called_once_with("House")
     mock_category_repo.update.assert_called_once_with(fake_category, data)
 
 
@@ -172,7 +126,6 @@ async def test_update_category_by_admin_on_others_category_success(current_admin
     fake_category_updated = Category(id=1, created_by_id=current_admin_user.id + 1, name="House")
     mock_category_repo = AsyncMock()
     mock_category_repo.get_by_id.return_value = fake_category
-    mock_category_repo.get_by_name.return_value = None
     mock_category_repo.update.return_value = fake_category_updated
 
     service = CategoryService(repository=mock_category_repo)

@@ -1,13 +1,19 @@
 """Tests d'intégration des endpoints Categories."""
 
+import asyncio
+
 from httpx import AsyncClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
 from src.modules.categories.schemas import CategoryCreate
+from src.modules.categories.service import CategoryService
 from src.modules.todos.repository import TodoRepository
 from src.modules.todos.schemas import TodoCreate
 from src.modules.users.models import User
+from tests.conftest import test_session_factory as session_factory
 
 
 async def test_create_category_success(authenticated_client: AsyncClient) -> None:
@@ -210,6 +216,52 @@ async def test_create_category_duplicate_name_returns_409(
     response = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
     assert response.status_code == 409
     assert response.json()["detail"] == "Une catégorie avec le nom Sport existe déjà."
+
+
+async def test_create_category_concurrent_same_name_no_duplicate() -> None:
+    """Two concurrent requests creating a category with the same name must not both
+    succeed. The database's unique constraint on `Category.name` is the real guard,
+    and `create_category` must translate the resulting IntegrityError into a clean
+    ConflictError instead of leaking it."""
+
+    write_lock = asyncio.Lock()
+
+    async def attempt(name: str) -> Category | Exception:
+        async with session_factory() as session:
+            repository = CategoryRepository(session)
+            original_create = repository.create
+
+            async def create_serialized(*args, **kwargs) -> Category:
+                async with write_lock:
+                    return await original_create(*args, **kwargs)
+
+            repository.create = create_serialized
+
+            service = CategoryService(repository)
+            try:
+                category = await service.create_category(
+                    created_by_id=1, data=CategoryCreate(name=name)
+                )
+                await session.commit()
+                return category
+            except Exception as exc:
+                await session.rollback()
+                return exc
+
+    results = await asyncio.gather(attempt("Sport"), attempt("sport"))
+
+    # Whichever attempt loses the race must never surface a raw IntegrityError
+    raw_integrity_errors = [r for r in results if isinstance(r, IntegrityError)]
+    assert not raw_integrity_errors, (
+        f"IntegrityError leaked out of create_category instead of being "
+        f"translated into ConflictError: {raw_integrity_errors}"
+    )
+
+    # Regardless of which attempt "wins", only one row must actually exist —
+    # checked independently, not by trusting either attempt's return value.
+    async with session_factory() as verify_session:
+        count = await CategoryRepository(verify_session).count(name="Sport")
+    assert count == 1
 
 
 async def test_create_category_case_insensitive_duplicate_returns_409(
