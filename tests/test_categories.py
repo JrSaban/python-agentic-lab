@@ -6,6 +6,7 @@ from httpx import AsyncClient
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.redis import redis_client
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
 from src.modules.categories.schemas import CategoryCreate
@@ -237,7 +238,7 @@ async def test_create_category_concurrent_same_name_no_duplicate() -> None:
 
             repository.create = create_serialized
 
-            service = CategoryService(repository)
+            service = CategoryService(repository, redis_client)
             try:
                 category = await service.create_category(
                     created_by_id=1, data=CategoryCreate(name=name)
