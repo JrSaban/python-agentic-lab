@@ -1,5 +1,6 @@
 """Security utilities."""
 
+import secrets
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -36,3 +37,7 @@ def create_access_token(data: dict) -> str:
 def decode_access_token(token: str) -> dict:
     """Decode a JWT access token and return its payload."""
     return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+
+
+def generate_refresh_token() -> str:
+    return secrets.token_urlsafe(32)
