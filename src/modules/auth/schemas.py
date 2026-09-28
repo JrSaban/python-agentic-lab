@@ -24,4 +24,11 @@ class TokenResponse(BaseModel):
     """Payload retourné lors d'un POST /auth/login."""
 
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
+
+
+class RefreshTokenRequest(BaseModel):
+    """Payload reçu lors d'un POST /auth/refresh."""
+    
+    refresh_token: str = Field(..., description="Refresh token de l'utilisateur")
