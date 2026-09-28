@@ -4,18 +4,25 @@ Service Layer (Logique métier pour les Categories).
 
 from collections.abc import Sequence
 
+from redis.asyncio import Redis
 from sqlalchemy.exc import IntegrityError
 
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
-from src.modules.categories.schemas import CategoryCreate, CategoryUpdate
+from src.modules.categories.schemas import CategoryCreate, CategoryResponse, CategoryUpdate
 from src.modules.users.models import User
+
+REDIS_TTL = 60 * 60 * 24
 
 
 class CategoryService:
-    def __init__(self, repository: CategoryRepository) -> None:
+    def __init__(self, repository: CategoryRepository, redis_client: Redis) -> None:
         self.repository = repository
+        self.redis_client = redis_client
+
+    def _cache_key(self, entity_id: int) -> str:
+        return f"category:{entity_id}"
 
     async def list_categories(
         self, skip: int = 0, limit: int = 100, name: str | None = None
@@ -24,6 +31,23 @@ class CategoryService:
         categories = await self.repository.get_all(skip=skip, limit=limit, name=name)
         total = await self.repository.count(name=name)
         return (categories, total)
+
+    async def get_category_cached(self, entity_id: int) -> CategoryResponse:
+        """
+        Récupère une catégorie via Redis
+        Si absent, récupère via le repository et enregistre dans Redis
+        """
+        key = self._cache_key(entity_id)
+        category = await self.redis_client.get(key)
+
+        if category:
+            return CategoryResponse.model_validate_json(category)
+
+        category = await self.get_category_or_404(entity_id)
+        category_response = CategoryResponse.model_validate(category)
+        await self.redis_client.set(key, category_response.model_dump_json(), ex=REDIS_TTL)
+
+        return category_response
 
     async def get_category_or_404(self, entity_id: int) -> Category:
         """Récupère une catégorie ou lève une exception HTTP 404."""
@@ -47,9 +71,13 @@ class CategoryService:
             raise ForbiddenError("Vous n'avez pas le droit de modifier cette catégorie.")
 
         try:
-            return await self.repository.update(category, data)
+            updated = await self.repository.update(category, data)
         except IntegrityError:
             raise ConflictError(f"Une catégorie avec le nom {data.name} existe déjà.") from None
+
+        # Invalidate cache
+        await self.redis_client.delete(self._cache_key(entity_id))
+        return updated
 
     async def delete_category(self, user: User, entity_id: int) -> None:
         """Supprime une categorie existante."""
@@ -58,3 +86,6 @@ class CategoryService:
 
         category = await self.get_category_or_404(entity_id)
         await self.repository.delete(category)
+
+        # Invalidate cache
+        await self.redis_client.delete(self._cache_key(entity_id))
