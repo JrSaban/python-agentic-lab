@@ -30,5 +30,5 @@ class TokenResponse(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     """Payload reçu lors d'un POST /auth/refresh."""
-    
+
     refresh_token: str = Field(..., description="Refresh token de l'utilisateur")

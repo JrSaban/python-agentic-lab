@@ -5,10 +5,12 @@ from typing import Annotated
 import jwt
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_session
 from src.core.exceptions import UnauthorizedError
+from src.core.redis import get_redis_client
 from src.core.security import decode_access_token
 from src.modules.auth.schemas import LoginRequest, TokenResponse
 from src.modules.auth.service import AuthService
@@ -45,9 +47,10 @@ async def get_current_user(
 # Factory de dépendance : instancie Repository et Service injectés par requête
 def get_auth_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis_client: Annotated[Redis, Depends(get_redis_client)],
 ) -> AuthService:
     user_repository = UserRepository(session)
-    return AuthService(user_repository)
+    return AuthService(user_repository=user_repository, redis_client=redis_client)
 
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
