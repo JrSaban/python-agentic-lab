@@ -12,7 +12,7 @@ from src.core.database import get_db_session
 from src.core.exceptions import UnauthorizedError
 from src.core.redis import get_redis_client
 from src.core.security import decode_access_token
-from src.modules.auth.schemas import LoginRequest, TokenResponse
+from src.modules.auth.schemas import LoginRequest, RefreshTokenRequest, TokenResponse
 from src.modules.auth.service import AuthService
 from src.modules.users.models import User
 from src.modules.users.repository import UserRepository
@@ -69,3 +69,30 @@ async def login(
     data: LoginRequest,
 ) -> TokenResponse:
     return await service.login(data)
+
+
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    summary="Refresh un token",
+    description="Refresh un token.",
+)
+async def refresh(
+    service: AuthServiceDep,
+    data: RefreshTokenRequest,
+) -> TokenResponse:
+    return await service.refresh(data.refresh_token)
+
+
+@router.post(
+    "/logout",
+    response_model=None,
+    status_code=204,
+    summary="Logout un utilisateur",
+    description="Déconnecte un utilisateur.",
+)
+async def logout(
+    service: AuthServiceDep,
+    current_user: CurrentUserDep,
+) -> None:
+    return await service.logout(current_user)
