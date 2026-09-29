@@ -40,4 +40,5 @@ def decode_access_token(token: str) -> dict:
 
 
 def generate_refresh_token() -> str:
+    """Generate a refresh token."""
     return secrets.token_urlsafe(32)
