@@ -1,6 +1,5 @@
 """Service Layer (Logique métier pour l'auth)."""
 
-import hashlib
 from datetime import timedelta
 from typing import Literal, cast
 
@@ -8,7 +7,12 @@ from redis.asyncio import Redis
 
 from src.core.config import settings
 from src.core.exceptions import UnauthorizedError
-from src.core.security import create_access_token, generate_refresh_token, verify_password
+from src.core.security import (
+    create_access_token,
+    generate_refresh_token,
+    hash_refresh_token,
+    verify_password,
+)
 from src.modules.auth.schemas import LoginRequest, TokenResponse
 from src.modules.users.models import User
 from src.modules.users.repository import UserRepository
@@ -24,7 +28,7 @@ class AuthService:
 
     async def _store_or_replace_refresh_token(self, user_id: int, refresh_token: str) -> None:
         """Store or replace the refresh token for a user."""
-        hashed_refresh_token = hashlib.sha256(refresh_token.encode()).hexdigest()
+        hashed_refresh_token = hash_refresh_token(refresh_token)
         user_key = self._redis_key("user", user_id)
         new_token_key = self._redis_key("token", hashed_refresh_token)
 
@@ -64,7 +68,7 @@ class AuthService:
 
     async def refresh(self, refresh_token: str) -> TokenResponse:
         """Refresh a user token."""
-        hashed_refresh_token = hashlib.sha256(refresh_token.encode()).hexdigest()
+        hashed_refresh_token = hash_refresh_token(refresh_token)
         user_id = cast(
             str | None, await self.redis_client.get(self._redis_key("token", hashed_refresh_token))
         )
