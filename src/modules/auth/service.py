@@ -84,6 +84,7 @@ class AuthService:
         return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
     async def logout(self, user: User) -> None:
+        """Logout a user."""
         user_key = self._redis_key("user", user.id)
         old_token = cast(str | None, await self.redis_client.getdel(user_key))
 
