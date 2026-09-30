@@ -34,8 +34,9 @@ class CategoryService:
     async def _invalidate_cache(self, key: int | None = None):
         """Invalidate cache."""
         # Pattern match + scan(match=...) retourne (cursor, list_of_keys)
-        _, keys_to_invalidate = await self.redis_client.scan(match="category:list:*")
-        await self.redis_client.delete(*keys_to_invalidate)
+        _, keys_to_invalidate = await self.redis_client.scan(match="categories:list:*")
+        if keys_to_invalidate:
+            await self.redis_client.delete(*keys_to_invalidate)
 
         if key is not None:
             await self.redis_client.delete(self._cache_key(key))
