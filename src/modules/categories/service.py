@@ -3,13 +3,12 @@ Service Layer (Logique métier pour les Categories).
 """
 
 import json
-import structlog
 from collections.abc import Sequence
 from typing import Any
 
+import structlog
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
-
 from sqlalchemy.exc import IntegrityError
 
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
@@ -49,7 +48,6 @@ class CategoryService:
         except RedisError:
             logger.warning("redis_unavailable", operation="invalidate_cache")
 
-
     async def list_categories(
         self, skip: int = 0, limit: int = 100, name: str | None = None
     ) -> tuple[Sequence[CategoryResponse], int]:
@@ -80,7 +78,10 @@ class CategoryService:
             await self.redis_client.set(
                 redis_key,
                 json.dumps(
-                    {"categories": [cat.model_dump_json() for cat in categories_resp], "total": total}
+                    {
+                        "categories": [cat.model_dump_json() for cat in categories_resp],
+                        "total": total,
+                    }
                 ),
                 ex=REDIS_TTL,
             )
