@@ -40,6 +40,7 @@ async def test_get_category_or_404_returns_category_when_found():
 async def test_create_category(current_user: User):
     mock_category_repo = AsyncMock()
     mock_redis_client = AsyncMock()
+    mock_redis_client.scan.return_value = (0, [])
     fake_category = Category(id=1, name="Test")
     mock_category_repo.create.return_value = fake_category
 
@@ -83,6 +84,7 @@ async def test_update_category_with_duplicate_name_raises_conflict_error(current
 async def test_update_category_successfully(current_user: User):
     mock_category_repo = AsyncMock()
     mock_redis_client = AsyncMock()
+    mock_redis_client.scan.return_value = (0, [])
     fake_category = Category(id=1, created_by_id=current_user.id, name="Sport")
     fake_category_updated = Category(id=1, created_by_id=current_user.id, name="House")
 
@@ -102,6 +104,7 @@ async def test_update_category_successfully(current_user: User):
 async def test_delete_category_by_admin_calls_repo_delete_when_found(current_admin_user: User):
     mock_category_repo = AsyncMock()
     mock_redis_client = AsyncMock()
+    mock_redis_client.scan.return_value = (0, [])
     fake_category = Category(id=1, created_by_id=current_admin_user.id, name="Test")
     mock_category_repo.get_by_id.return_value = fake_category
 
@@ -134,6 +137,7 @@ async def test_update_category_by_admin_on_others_category_success(current_admin
     fake_category_updated = Category(id=1, created_by_id=current_admin_user.id + 1, name="House")
     mock_category_repo = AsyncMock()
     mock_redis_client = AsyncMock()
+    mock_redis_client.scan.return_value = (0, [])
     mock_category_repo.get_by_id.return_value = fake_category
     mock_category_repo.update.return_value = fake_category_updated
 
