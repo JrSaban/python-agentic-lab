@@ -3,10 +3,13 @@ Service Layer (Logique métier pour les Categories).
 """
 
 import json
+import structlog
 from collections.abc import Sequence
 from typing import Any
 
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
+
 from sqlalchemy.exc import IntegrityError
 
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
@@ -17,6 +20,8 @@ from src.modules.categories.schemas import CategoryCreate, CategoryResponse, Cat
 from src.modules.users.models import User
 
 REDIS_TTL = 60 * 60 * 24
+
+logger = structlog.get_logger()
 
 
 class CategoryService:
@@ -33,43 +38,54 @@ class CategoryService:
 
     async def _invalidate_cache(self, key: int | None = None):
         """Invalidate cache."""
-        # Pattern match + scan(match=...) retourne (cursor, list_of_keys)
-        _, keys_to_invalidate = await self.redis_client.scan(match="categories:list:*")
-        if keys_to_invalidate:
-            await self.redis_client.delete(*keys_to_invalidate)
+        try:
+            # Pattern match + scan(match=...) retourne (cursor, list_of_keys)
+            _, keys_to_invalidate = await self.redis_client.scan(match="categories:list:*")
+            if keys_to_invalidate:
+                await self.redis_client.delete(*keys_to_invalidate)
 
-        if key is not None:
-            await self.redis_client.delete(self._cache_key(key))
+            if key is not None:
+                await self.redis_client.delete(self._cache_key(key))
+        except RedisError:
+            logger.warning("redis_unavailable", operation="invalidate_cache")
+
 
     async def list_categories(
         self, skip: int = 0, limit: int = 100, name: str | None = None
     ) -> tuple[Sequence[CategoryResponse], int]:
         """Récupère l'ensemble des catégories avec pagination."""
         redis_key = self._cache_key(key={"skip": skip, "limit": limit, "name": name}, for_list=True)
-        cached_response = await self.redis_client.get(redis_key)
 
-        if cached_response:
-            # Parse la réponse JSON en objet Python
-            response_data = json.loads(cached_response)
+        try:
+            cached_response = await self.redis_client.get(redis_key)
 
-            # Convertis les listes d'objets en Pydantic model
-            categories = [
-                CategoryResponse.model_validate_json(cat) for cat in response_data["categories"]
-            ]
+            if cached_response:
+                # Parse la réponse JSON en objet Python
+                response_data = json.loads(cached_response)
 
-            return (categories, int(response_data["total"]))
+                # Convertis les listes d'objets en Pydantic model
+                categories = [
+                    CategoryResponse.model_validate_json(cat) for cat in response_data["categories"]
+                ]
+
+                return (categories, int(response_data["total"]))
+        except RedisError:
+            logger.warning("redis_unavailable", operation="get_list_categories")
 
         categories = await self.repository.get_all(skip=skip, limit=limit, name=name)
         categories_resp = [CategoryResponse.model_validate(cat) for cat in categories]
         total = await self.repository.count(name=name)
 
-        await self.redis_client.set(
-            redis_key,
-            json.dumps(
-                {"categories": [cat.model_dump_json() for cat in categories_resp], "total": total}
-            ),
-            ex=REDIS_TTL,
-        )
+        try:
+            await self.redis_client.set(
+                redis_key,
+                json.dumps(
+                    {"categories": [cat.model_dump_json() for cat in categories_resp], "total": total}
+                ),
+                ex=REDIS_TTL,
+            )
+        except RedisError:
+            logger.warning("redis_unavailable", operation="set_list_categories")
 
         return (categories_resp, total)
 
@@ -79,14 +95,22 @@ class CategoryService:
         Si absent, récupère via le repository et enregistre dans Redis
         """
         key = self._cache_key(entity_id)
-        category = await self.redis_client.get(key)
 
-        if category:
-            return CategoryResponse.model_validate_json(category)
+        try:
+            category = await self.redis_client.get(key)
+
+            if category:
+                return CategoryResponse.model_validate_json(category)
+        except RedisError:
+            logger.warning("redis_unavailable", operation="get_category")
 
         category = await self.get_category_or_404(entity_id)
         category_response = CategoryResponse.model_validate(category)
-        await self.redis_client.set(key, category_response.model_dump_json(), ex=REDIS_TTL)
+
+        try:
+            await self.redis_client.set(key, category_response.model_dump_json(), ex=REDIS_TTL)
+        except RedisError:
+            logger.warning("redis_unavailable", operation="set_category")
 
         return category_response
 
