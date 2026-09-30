@@ -1,3 +1,5 @@
+from hashlib import md5
+
 import redis
 from redis.asyncio import Redis
 
@@ -11,3 +13,8 @@ redis_client: Redis = redis.asyncio.from_url(settings.REDIS_URL, decode_response
 def get_redis_client() -> Redis:
     """Dépendance FastAPI : renvoie le client Redis partagé, déjà créé au chargement du module."""
     return redis_client
+
+
+def hash_redis_key(key) -> str:
+    """Hash Redis Key."""
+    return md5(key.encode()).hexdigest()

@@ -2,12 +2,15 @@
 Service Layer (Logique métier pour les Categories).
 """
 
+import json
 from collections.abc import Sequence
+from typing import Any
 
 from redis.asyncio import Redis
 from sqlalchemy.exc import IntegrityError
 
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
+from src.core.redis import hash_redis_key
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
 from src.modules.categories.schemas import CategoryCreate, CategoryResponse, CategoryUpdate
@@ -21,16 +24,44 @@ class CategoryService:
         self.repository = repository
         self.redis_client = redis_client
 
-    def _cache_key(self, entity_id: int) -> str:
-        return f"category:{entity_id}"
+    def _cache_key(self, key: int | dict[str, Any], for_list: bool = False) -> str:
+        if isinstance(key, dict) and for_list:
+            filtered_key = {k: v for k, v in key.items() if v is not None}
+            return f"categories:list:{hash_redis_key(json.dumps(filtered_key, sort_keys=True))}"
+
+        return f"category:{key}"
 
     async def list_categories(
         self, skip: int = 0, limit: int = 100, name: str | None = None
-    ) -> tuple[Sequence[Category], int]:
+    ) -> tuple[Sequence[CategoryResponse], int]:
         """Récupère l'ensemble des catégories avec pagination."""
+        redis_key = self._cache_key(key={"skip": skip, "limit": limit, "name": name}, for_list=True)
+        cached_response = await self.redis_client.get(redis_key)
+
+        if cached_response:
+            # Parse la réponse JSON en objet Python
+            response_data = json.loads(cached_response)
+
+            # Convertis les listes d'objets en Pydantic model
+            categories = [
+                CategoryResponse.model_validate_json(cat) for cat in response_data["categories"]
+            ]
+
+            return (categories, int(response_data["total"]))
+
         categories = await self.repository.get_all(skip=skip, limit=limit, name=name)
+        categories_resp = [CategoryResponse.model_validate(cat) for cat in categories]
         total = await self.repository.count(name=name)
-        return (categories, total)
+
+        await self.redis_client.set(
+            redis_key,
+            json.dumps(
+                {"categories": [cat.model_dump_json() for cat in categories_resp], "total": total}
+            ),
+            ex=REDIS_TTL,
+        )
+
+        return (categories_resp, total)
 
     async def get_category_cached(self, entity_id: int) -> CategoryResponse:
         """
