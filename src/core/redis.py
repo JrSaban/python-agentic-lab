@@ -15,6 +15,6 @@ def get_redis_client() -> Redis:
     return redis_client
 
 
-def hash_redis_key(key) -> str:
+def hash_redis_key(key: str) -> str:
     """Hash Redis Key."""
     return md5(key.encode()).hexdigest()
