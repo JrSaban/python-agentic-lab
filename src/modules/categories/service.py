@@ -69,6 +69,8 @@ class CategoryService:
                 return (categories, int(response_data["total"]))
         except RedisError:
             logger.warning("redis_unavailable", operation="get_list_categories")
+        except Exception:
+            logger.warning("cache_corrupted", operation="get_list_categories")
 
         categories = await self.repository.get_all(skip=skip, limit=limit, name=name)
         categories_resp = [CategoryResponse.model_validate(cat) for cat in categories]
@@ -104,6 +106,8 @@ class CategoryService:
                 return CategoryResponse.model_validate_json(category)
         except RedisError:
             logger.warning("redis_unavailable", operation="get_category")
+        except Exception:
+            logger.warning("cache_corrupted", operation="get_category")
 
         category = await self.get_category_or_404(entity_id)
         category_response = CategoryResponse.model_validate(category)
