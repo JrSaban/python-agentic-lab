@@ -110,9 +110,7 @@ async def test_refresh_rotates_the_refresh_token(client: AsyncClient) -> None:
     new_refresh_token = refresh_response.json()["refresh_token"]
     assert new_refresh_token != old_refresh_token
 
-    reuse_response = await client.post(
-        "/api/v1/refresh", json={"refresh_token": old_refresh_token}
-    )
+    reuse_response = await client.post("/api/v1/refresh", json={"refresh_token": old_refresh_token})
     assert reuse_response.status_code == 401
 
 
