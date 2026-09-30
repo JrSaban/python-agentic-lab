@@ -4,7 +4,7 @@ Service Layer (Logique métier pour les Categories).
 
 import json
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from redis.asyncio import Redis
@@ -28,23 +28,22 @@ class CategoryService:
         self.repository = repository
         self.redis_client = redis_client
 
-    def _cache_key(self, key: int | dict[str, Any], for_list: bool = False) -> str:
+    def _cache_key(self, *, gen: int = 0, key: int | dict[str, Any], for_list: bool = False) -> str:
         if isinstance(key, dict) and for_list:
             filtered_key = {k: v for k, v in key.items() if v is not None}
-            return f"categories:list:{hash_redis_key(json.dumps(filtered_key, sort_keys=True))}"
+            return (
+                f"categories:list:{gen}:{hash_redis_key(json.dumps(filtered_key, sort_keys=True))}"
+            )
 
         return f"category:{key}"
 
-    async def _invalidate_cache(self, key: int | None = None):
+    async def _invalidate_cache(self, *, key: int | None = None):
         """Invalidate cache."""
         try:
-            # Pattern match + scan(match=...) retourne (cursor, list_of_keys)
-            _, keys_to_invalidate = await self.redis_client.scan(match="categories:list:*")
-            if keys_to_invalidate:
-                await self.redis_client.delete(*keys_to_invalidate)
+            await self.redis_client.incr("categories:list:gen")
 
             if key is not None:
-                await self.redis_client.delete(self._cache_key(key))
+                await self.redis_client.delete(self._cache_key(key=key))
         except RedisError:
             logger.warning("redis_unavailable", operation="invalidate_cache")
 
@@ -52,7 +51,16 @@ class CategoryService:
         self, skip: int = 0, limit: int = 100, name: str | None = None
     ) -> tuple[Sequence[CategoryResponse], int]:
         """Récupère l'ensemble des catégories avec pagination."""
-        redis_key = self._cache_key(key={"skip": skip, "limit": limit, "name": name}, for_list=True)
+        try:
+            gen = cast(str | None, await self.redis_client.get("categories:list:gen"))
+        except Exception:
+            gen = 0
+
+        redis_key = self._cache_key(
+            gen=int(gen) if gen else 0,
+            key={"skip": skip, "limit": limit, "name": name},
+            for_list=True,
+        )
 
         try:
             cached_response = await self.redis_client.get(redis_key)
@@ -97,7 +105,7 @@ class CategoryService:
         Récupère une catégorie via Redis
         Si absent, récupère via le repository et enregistre dans Redis
         """
-        key = self._cache_key(entity_id)
+        key = self._cache_key(key=entity_id)
 
         try:
             category = await self.redis_client.get(key)
@@ -148,7 +156,7 @@ class CategoryService:
             raise ConflictError(f"Une catégorie avec le nom {data.name} existe déjà.") from None
 
         # Invalidate cache
-        await self._invalidate_cache(entity_id)
+        await self._invalidate_cache(key=entity_id)
         return updated
 
     async def delete_category(self, user: User, entity_id: int) -> None:
@@ -160,4 +168,4 @@ class CategoryService:
         await self.repository.delete(category)
 
         # Invalidate cache
-        await self._invalidate_cache(entity_id)
+        await self._invalidate_cache(key=entity_id)
