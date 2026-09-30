@@ -70,7 +70,8 @@ class AuthService:
         """Refresh a user token."""
         hashed_refresh_token = hash_refresh_token(refresh_token)
         user_id = cast(
-            str | None, await self.redis_client.get(self._redis_key("token", hashed_refresh_token))
+            str | None,
+            await self.redis_client.getdel(self._redis_key("token", hashed_refresh_token)),
         )
         if user_id is None:
             raise UnauthorizedError("Refresh token invalide ou expiré")
