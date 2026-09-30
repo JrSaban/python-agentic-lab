@@ -17,6 +17,8 @@ from src.modules.todos.schemas import TodoCreate
 from src.modules.users.models import User
 from tests.conftest import test_session_factory as session_factory
 
+# --- create ---
+
 
 async def test_create_category_success(authenticated_client: AsyncClient) -> None:
     """Successful category creation (POST /api/v1/categories)."""
@@ -55,6 +57,111 @@ async def test_create_category_empty_color_returns_422(authenticated_client: Asy
     assert response.status_code == 422
 
 
+async def test_create_category_uppercases_color(authenticated_client: AsyncClient) -> None:
+    """The color field is uppercased."""
+    create_res = await authenticated_client.post(
+        "/api/v1/categories", json={"name": "Sport", "color": "#fbfbfb"}
+    )
+    category_id = create_res.json()["id"]
+
+    category = await authenticated_client.get(f"/api/v1/categories/{category_id}")
+    assert category.status_code == 200
+    assert category.json()["id"] == category_id
+    assert category.json()["name"] == "Sport"
+    assert category.json()["color"] == "#FBFBFB"
+
+
+async def test_create_category_duplicate_name_returns_409(
+    authenticated_client: AsyncClient,
+) -> None:
+    """A category with the same name is rejected (409 Conflict)."""
+    # 1. Création de la catégorie
+    await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+
+    # 2. Tentative de création de la même catégorie
+    response = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Une catégorie avec le nom Sport existe déjà."
+
+
+async def test_create_category_case_insensitive_duplicate_returns_409(
+    authenticated_client: AsyncClient,
+) -> None:
+    """A duplicate name in uppercase is also rejected (409 Conflict)."""
+    # 1. Création de la catégorie en minuscules
+    await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+
+    # 2. Tentative de création de la même catégorie en majuscules
+    response = await authenticated_client.post("/api/v1/categories", json={"name": "SPORT"})
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Une catégorie avec le nom SPORT existe déjà."
+
+
+async def test_create_category_concurrent_same_name_no_duplicate(
+    redis_client: fakeredis.FakeAsyncRedis,
+) -> None:
+    """Two concurrent requests creating a category with the same name must not both
+    succeed. The database's unique constraint on `Category.name` is the real guard,
+    and `create_category` must translate the resulting IntegrityError into a clean
+    ConflictError instead of leaking it."""
+
+    write_lock = asyncio.Lock()
+
+    async def attempt(name: str) -> Category | Exception:
+        async with session_factory() as session:
+            repository = CategoryRepository(session)
+            original_create = repository.create
+
+            async def create_serialized(*args, **kwargs) -> Category:
+                async with write_lock:
+                    return await original_create(*args, **kwargs)
+
+            repository.create = create_serialized
+
+            service = CategoryService(repository, redis_client)
+            try:
+                category = await service.create_category(
+                    created_by_id=1, data=CategoryCreate(name=name)
+                )
+                await session.commit()
+                return category
+            except Exception as exc:
+                await session.rollback()
+                return exc
+
+    results = await asyncio.gather(attempt("Sport"), attempt("sport"))
+
+    # Whichever attempt loses the race must never surface a raw IntegrityError
+    raw_integrity_errors = [r for r in results if isinstance(r, IntegrityError)]
+    assert not raw_integrity_errors, (
+        f"IntegrityError leaked out of create_category instead of being "
+        f"translated into ConflictError: {raw_integrity_errors}"
+    )
+
+    # Regardless of which attempt "wins", only one row must actually exist —
+    # checked independently, not by trusting either attempt's return value.
+    async with session_factory() as verify_session:
+        count = await CategoryRepository(verify_session).count(name="Sport")
+    assert count == 1
+
+
+async def test_create_category_invalidates_list_cache(
+    authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """Creating a category bumps categories:list:gen, so a subsequent GET /categories
+    with the same filters no longer hits the previously cached (now stale) entry."""
+    await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    gen = await redis_client.get("categories:list:gen")
+    assert gen == "1"
+
+    await authenticated_client.post("/api/v1/categories", json={"name": "House"})
+    gen = await redis_client.get("categories:list:gen")
+    assert gen == "2"
+
+
+# --- list ---
+
+
 async def test_list_categories(authenticated_client: AsyncClient) -> None:
     """Fetching the list of categories (GET /api/v1/categories)."""
     # 1. Création de deux catégories
@@ -69,6 +176,81 @@ async def test_list_categories(authenticated_client: AsyncClient) -> None:
     data = response.json()
     assert data["total"] == 2
     assert data["items"][0]["name"] == "House"  # Tri croissant par nom
+
+
+async def test_list_categories_filter_by_name(authenticated_client: AsyncClient) -> None:
+    """Checks filtering categories by name."""
+    cat_1 = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    cat_2 = await authenticated_client.post("/api/v1/categories", json={"name": "Portable"})
+    await authenticated_client.post("/api/v1/categories", json={"name": "House"})
+
+    response = await authenticated_client.get("/api/v1/categories?name=port")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert data["items"][0] == cat_2.json()
+    assert data["items"][1] == cat_1.json()
+
+
+async def test_list_categories_without_token_returns_401(client: AsyncClient) -> None:
+    """GET /categories with no Authorization header at all → 401."""
+    response = await client.get("/api/v1/categories")
+    assert response.status_code == 401
+
+
+async def test_list_categories_stores_it_in_cache(
+    authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """The first GET /categories stores the result under a categories:list:* key."""
+    await authenticated_client.post("/api/v1/categories", json={"name": "House"})
+    gen = await redis_client.get("categories:list:gen")
+    assert gen == "1"
+    entires = await redis_client.keys(f"categories:list:{gen}:*")
+    assert len(entires) == 0
+    await authenticated_client.get("/api/v1/categories")
+    entires = await redis_client.keys(f"categories:list:{gen}:*")
+    assert len(entires) == 1
+
+
+async def test_list_categories_is_served_from_cache(
+    authenticated_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Once cached, GET /categories doesn't re-read the database: a category created
+    directly via the repository (bypassing the service, so no cache invalidation)
+    isn't reflected in a second call with the same filters."""
+    await authenticated_client.post("/api/v1/categories", json={"name": "House"})
+    response = await authenticated_client.get("/api/v1/categories")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["name"] == "House"
+
+    repository = CategoryRepository(db_session)
+    await repository.create(created_by_id=1, data=CategoryCreate(name="Sport"))
+
+    response = await authenticated_client.get("/api/v1/categories")
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["name"] == "House"
+
+
+async def test_list_categories_different_filters_use_different_cache_entries(
+    authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """Two GET /categories calls with different skip/limit/name produce two distinct
+    categories:list:* entries, not one overwriting the other."""
+    await authenticated_client.post("/api/v1/categories", json={"name": "House"})
+
+    await authenticated_client.get("/api/v1/categories?name=port")
+    await authenticated_client.get("/api/v1/categories")
+
+    gen = await redis_client.get("categories:list:gen")
+    assert gen == "1"
+    keys = await redis_client.keys(f"categories:list:{gen}:*")
+    assert len(keys) == 2
+
+
+# --- get ---
 
 
 async def test_get_category_by_id_success(authenticated_client: AsyncClient) -> None:
@@ -90,6 +272,51 @@ async def test_get_category_not_found_returns_404(authenticated_client: AsyncCli
     response = await authenticated_client.get("/api/v1/categories/99999")
     assert response.status_code == 404
     assert response.json()["detail"] == "Catégorie avec l'ID 99999 introuvable."
+
+
+async def test_get_category_without_token_returns_401(client: AsyncClient) -> None:
+    """GET /categories/{id} with no Authorization header at all → 401."""
+    response = await client.get("/api/v1/categories/1")
+    assert response.status_code == 401
+
+
+async def test_get_category_stores_it_in_cache(
+    authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """The first GET /categories/{id} stores the category in Redis."""
+    create_res = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    category_id = create_res.json()["id"]
+    assert await redis_client.get(f"category:{category_id}") is None
+
+    response = await authenticated_client.get(f"/api/v1/categories/{category_id}")
+    assert response.status_code == 200
+
+    cached = await redis_client.get(f"category:{category_id}")
+    assert cached is not None
+    assert json.loads(cached) == response.json()
+
+
+async def test_get_category_is_served_from_cache(
+    authenticated_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Once cached, GET /categories/{id} no longer reads the database: a change made
+    directly in the database (bypassing the service, so no invalidation) isn't seen."""
+    create_res = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    category_id = create_res.json()["id"]
+    await authenticated_client.get(f"/api/v1/categories/{category_id}")
+
+    # Modification directe en base, sans passer par le service
+    repository = CategoryRepository(db_session)
+    category = await repository.get_by_id(category_id)
+    assert category is not None
+    await repository.update(category, CategoryUpdate(name="House"))
+
+    response = await authenticated_client.get(f"/api/v1/categories/{category_id}")
+    assert response.status_code == 200
+    assert response.json()["name"] == "Sport"
+
+
+# --- update ---
 
 
 async def test_patch_category_success(authenticated_client: AsyncClient) -> None:
@@ -150,6 +377,78 @@ async def test_patch_category_with_null_name_returns_422(authenticated_client: A
     assert response.status_code == 422
 
 
+async def test_update_category_name_conflict_returns_409(authenticated_client: AsyncClient) -> None:
+    """Renaming a category to another existing category's name returns 409."""
+    # 1. Création de deux catégories
+    await authenticated_client.post("/api/v1/categories", json={"name": "House"})
+    create_res = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    category_id = create_res.json()["id"]
+
+    # 2. Tentative de renommer la catégorie "Sport" en "house"
+    response = await authenticated_client.patch(
+        f"/api/v1/categories/{category_id}", json={"name": "house"}
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Une catégorie avec le nom house existe déjà."
+
+
+async def test_update_category_keep_same_name_succeeds(authenticated_client: AsyncClient) -> None:
+    """Renaming a category to its own current name doesn't trigger a 409 Conflict."""
+    # 1. Création de la catégorie
+    create_res = await authenticated_client.post("/api/v1/categories", json={"name": "sport"})
+    category_id = create_res.json()["id"]
+
+    # 2. Tentative de renommer la catégorie "sport" en "Sport"
+    response = await authenticated_client.patch(
+        f"/api/v1/categories/{category_id}", json={"name": "Sport"}
+    )
+    assert response.status_code == 200
+    assert response.json()["id"] == category_id
+    assert response.json()["name"] == "Sport"
+
+
+async def test_patch_category_invalidates_cache(
+    authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """PATCH /categories/{id} removes the cached entry, so the next GET returns fresh data."""
+    create_res = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    category_id = create_res.json()["id"]
+    await authenticated_client.get(f"/api/v1/categories/{category_id}")
+
+    await authenticated_client.patch(f"/api/v1/categories/{category_id}", json={"name": "House"})
+    assert await redis_client.get(f"category:{category_id}") is None
+
+    response = await authenticated_client.get(f"/api/v1/categories/{category_id}")
+    assert response.json()["name"] == "House"
+
+
+async def test_patch_category_invalidates_list_cache(
+    authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """Updating a category bumps categories:list:gen, so a previously cached list
+    reflects the change on the next GET."""
+    created_res = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    gen = await redis_client.get("categories:list:gen")
+    assert gen == "1"
+
+    response = await authenticated_client.get("/api/v1/categories")
+    assert response.status_code == 200
+    assert response.json()["items"][0]["name"] == "Sport"
+
+    await authenticated_client.patch(
+        f"/api/v1/categories/{created_res.json()['id']}", json={"name": "House"}
+    )
+    gen = await redis_client.get("categories:list:gen")
+    assert gen == "2"
+
+    response = await authenticated_client.get("/api/v1/categories")
+    assert response.status_code == 200
+    assert response.json()["items"][0]["name"] == "House"
+
+
+# --- delete ---
+
+
 async def test_delete_category_by_admin_success(
     authenticated_admin: AsyncClient, other_user: User, db_session: AsyncSession
 ) -> None:
@@ -195,57 +494,6 @@ async def test_delete_category_removes_association_but_keeps_todo(
     assert get_todo.json()["categories"] == []
 
 
-async def test_get_category_stores_it_in_cache(
-    authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
-) -> None:
-    """The first GET /categories/{id} stores the category in Redis."""
-    create_res = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
-    category_id = create_res.json()["id"]
-    assert await redis_client.get(f"category:{category_id}") is None
-
-    response = await authenticated_client.get(f"/api/v1/categories/{category_id}")
-    assert response.status_code == 200
-
-    cached = await redis_client.get(f"category:{category_id}")
-    assert cached is not None
-    assert json.loads(cached) == response.json()
-
-
-async def test_get_category_is_served_from_cache(
-    authenticated_client: AsyncClient, db_session: AsyncSession
-) -> None:
-    """Once cached, GET /categories/{id} no longer reads the database: a change made
-    directly in the database (bypassing the service, so no invalidation) isn't seen."""
-    create_res = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
-    category_id = create_res.json()["id"]
-    await authenticated_client.get(f"/api/v1/categories/{category_id}")
-
-    # Modification directe en base, sans passer par le service
-    repository = CategoryRepository(db_session)
-    category = await repository.get_by_id(category_id)
-    assert category is not None
-    await repository.update(category, CategoryUpdate(name="House"))
-
-    response = await authenticated_client.get(f"/api/v1/categories/{category_id}")
-    assert response.status_code == 200
-    assert response.json()["name"] == "Sport"
-
-
-async def test_patch_category_invalidates_cache(
-    authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
-) -> None:
-    """PATCH /categories/{id} removes the cached entry, so the next GET returns fresh data."""
-    create_res = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
-    category_id = create_res.json()["id"]
-    await authenticated_client.get(f"/api/v1/categories/{category_id}")
-
-    await authenticated_client.patch(f"/api/v1/categories/{category_id}", json={"name": "House"})
-    assert await redis_client.get(f"category:{category_id}") is None
-
-    response = await authenticated_client.get(f"/api/v1/categories/{category_id}")
-    assert response.json()["name"] == "House"
-
-
 async def test_delete_category_invalidates_cache(
     authenticated_admin: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
 ) -> None:
@@ -262,134 +510,31 @@ async def test_delete_category_invalidates_cache(
     assert get_res.status_code == 404
 
 
-async def test_list_categories_without_token_returns_401(client: AsyncClient) -> None:
-    """GET /categories with no Authorization header at all → 401."""
-    response = await client.get("/api/v1/categories")
-    assert response.status_code == 401
-
-
-async def test_get_category_without_token_returns_401(client: AsyncClient) -> None:
-    """GET /categories/{id} with no Authorization header at all → 401."""
-    response = await client.get("/api/v1/categories/1")
-    assert response.status_code == 401
-
-
-async def test_create_category_duplicate_name_returns_409(
-    authenticated_client: AsyncClient,
+async def test_delete_category_invalidates_list_cache(
+    authenticated_admin: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
 ) -> None:
-    """A category with the same name is rejected (409 Conflict)."""
-    # 1. Création de la catégorie
-    await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    """Deleting a category bumps categories:list:gen, so a previously cached list
+    no longer includes it on the next GET."""
+    created_res = await authenticated_admin.post("/api/v1/categories", json={"name": "Sport"})
+    await authenticated_admin.post("/api/v1/categories", json={"name": "House"})
+    gen = await redis_client.get("categories:list:gen")
+    assert gen == "2"
 
-    # 2. Tentative de création de la même catégorie
-    response = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
-    assert response.status_code == 409
-    assert response.json()["detail"] == "Une catégorie avec le nom Sport existe déjà."
-
-
-async def test_create_category_concurrent_same_name_no_duplicate(
-    redis_client: fakeredis.FakeAsyncRedis,
-) -> None:
-    """Two concurrent requests creating a category with the same name must not both
-    succeed. The database's unique constraint on `Category.name` is the real guard,
-    and `create_category` must translate the resulting IntegrityError into a clean
-    ConflictError instead of leaking it."""
-
-    write_lock = asyncio.Lock()
-
-    async def attempt(name: str) -> Category | Exception:
-        async with session_factory() as session:
-            repository = CategoryRepository(session)
-            original_create = repository.create
-
-            async def create_serialized(*args, **kwargs) -> Category:
-                async with write_lock:
-                    return await original_create(*args, **kwargs)
-
-            repository.create = create_serialized
-
-            service = CategoryService(repository, redis_client)
-            try:
-                category = await service.create_category(
-                    created_by_id=1, data=CategoryCreate(name=name)
-                )
-                await session.commit()
-                return category
-            except Exception as exc:
-                await session.rollback()
-                return exc
-
-    results = await asyncio.gather(attempt("Sport"), attempt("sport"))
-
-    # Whichever attempt loses the race must never surface a raw IntegrityError
-    raw_integrity_errors = [r for r in results if isinstance(r, IntegrityError)]
-    assert not raw_integrity_errors, (
-        f"IntegrityError leaked out of create_category instead of being "
-        f"translated into ConflictError: {raw_integrity_errors}"
-    )
-
-    # Regardless of which attempt "wins", only one row must actually exist —
-    # checked independently, not by trusting either attempt's return value.
-    async with session_factory() as verify_session:
-        count = await CategoryRepository(verify_session).count(name="Sport")
-    assert count == 1
-
-
-async def test_create_category_case_insensitive_duplicate_returns_409(
-    authenticated_client: AsyncClient,
-) -> None:
-    """A duplicate name in uppercase is also rejected (409 Conflict)."""
-    # 1. Création de la catégorie en minuscules
-    await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
-
-    # 2. Tentative de création de la même catégorie en majuscules
-    response = await authenticated_client.post("/api/v1/categories", json={"name": "SPORT"})
-    assert response.status_code == 409
-    assert response.json()["detail"] == "Une catégorie avec le nom SPORT existe déjà."
-
-
-async def test_create_category_uppercases_color(authenticated_client: AsyncClient) -> None:
-    """The color field is uppercased."""
-    create_res = await authenticated_client.post(
-        "/api/v1/categories", json={"name": "Sport", "color": "#fbfbfb"}
-    )
-    category_id = create_res.json()["id"]
-
-    category = await authenticated_client.get(f"/api/v1/categories/{category_id}")
-    assert category.status_code == 200
-    assert category.json()["id"] == category_id
-    assert category.json()["name"] == "Sport"
-    assert category.json()["color"] == "#FBFBFB"
-
-
-async def test_update_category_name_conflict_returns_409(authenticated_client: AsyncClient) -> None:
-    """Renaming a category to another existing category's name returns 409."""
-    # 1. Création de deux catégories
-    await authenticated_client.post("/api/v1/categories", json={"name": "House"})
-    create_res = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
-    category_id = create_res.json()["id"]
-
-    # 2. Tentative de renommer la catégorie "Sport" en "house"
-    response = await authenticated_client.patch(
-        f"/api/v1/categories/{category_id}", json={"name": "house"}
-    )
-    assert response.status_code == 409
-    assert response.json()["detail"] == "Une catégorie avec le nom house existe déjà."
-
-
-async def test_update_category_keep_same_name_succeeds(authenticated_client: AsyncClient) -> None:
-    """Renaming a category to its own current name doesn't trigger a 409 Conflict."""
-    # 1. Création de la catégorie
-    create_res = await authenticated_client.post("/api/v1/categories", json={"name": "sport"})
-    category_id = create_res.json()["id"]
-
-    # 2. Tentative de renommer la catégorie "sport" en "Sport"
-    response = await authenticated_client.patch(
-        f"/api/v1/categories/{category_id}", json={"name": "Sport"}
-    )
+    response = await authenticated_admin.get("/api/v1/categories")
     assert response.status_code == 200
-    assert response.json()["id"] == category_id
-    assert response.json()["name"] == "Sport"
+    assert len(response.json()["items"]) == 2
+
+    await authenticated_admin.delete(f"/api/v1/categories/{created_res.json()['id']}")
+    gen = await redis_client.get("categories:list:gen")
+    assert gen == "3"
+
+    response = await authenticated_admin.get("/api/v1/categories")
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 1
+    assert response.json()["items"][0]["name"] == "House"
+
+
+# --- category todos ---
 
 
 async def test_get_todos_by_category(
@@ -461,17 +606,3 @@ async def test_get_todos_by_category_empty(authenticated_client: AsyncClient) ->
     data = response.json()
     assert data["total"] == 0
     assert data["items"] == []
-
-
-async def test_list_categories_filter_by_name(authenticated_client: AsyncClient) -> None:
-    """Checks filtering categories by name."""
-    cat_1 = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
-    cat_2 = await authenticated_client.post("/api/v1/categories", json={"name": "Portable"})
-    await authenticated_client.post("/api/v1/categories", json={"name": "House"})
-
-    response = await authenticated_client.get("/api/v1/categories?name=port")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["total"] == 2
-    assert data["items"][0] == cat_2.json()
-    assert data["items"][1] == cat_1.json()

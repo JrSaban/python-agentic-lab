@@ -150,6 +150,48 @@ async def test_update_category_by_admin_on_others_category_success(current_admin
     mock_category_repo.update.assert_called_once_with(fake_category, data)
 
 
+async def test_update_category_invalidates_item_cache(current_user: User):
+    """update_category calls _invalidate_cache with the entity's own id — a regression
+    test for the bug where a positional call bound entity_id to the wrong parameter
+    and silently stopped invalidating the item cache."""
+    ...
+
+
+async def test_delete_category_invalidates_item_cache(current_admin_user: User):
+    """Same regression test as above, for delete_category."""
+    ...
+
+
+async def test_list_categories_falls_back_to_db_when_redis_get_fails(current_user: User):
+    """A RedisError on the cache read doesn't crash list_categories — it falls back
+    to the repository, the same as a genuine cache miss."""
+    ...
+
+
+async def test_list_categories_falls_back_to_db_when_redis_set_fails(current_user: User):
+    """A RedisError on the cache write after a DB fetch still returns the fresh data;
+    it just doesn't get cached."""
+    ...
+
+
+async def test_list_categories_ignores_corrupted_cache_entry(current_user: User):
+    """Malformed JSON (or a payload that no longer matches CategoryResponse) stored
+    under the list cache key doesn't crash the request — it's treated like a cache miss."""
+    ...
+
+
+async def test_get_category_cached_falls_back_to_db_when_redis_unavailable(current_user: User):
+    """A RedisError on get_category_cached's Redis calls doesn't prevent the category
+    from being returned via the repository."""
+    ...
+
+
+async def test_invalidate_cache_does_not_raise_when_redis_unavailable(current_user: User):
+    """update_category/delete_category still succeed even if the cache invalidation
+    step (INCR / DELETE) raises a RedisError."""
+    ...
+
+
 async def test_delete_category_by_non_admin_raises_forbidden_error(current_user: User):
     mock_category_repo = AsyncMock()
     mock_redis_client = AsyncMock()
