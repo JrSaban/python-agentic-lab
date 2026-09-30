@@ -154,7 +154,7 @@ async def test_refresh_replaces_existing_refresh_token(
     """refresh() atomically swaps the user's token (SET ... GET) and deletes the
     previous token's key — same rotation mechanics as login()."""
     mock_user_repo.get_by_id.return_value = user
-    mock_redis.get.return_value = "1"
+    mock_redis.getdel.return_value = "1"
     mock_redis.set.return_value = "old_hash"
 
     result = await auth_service.refresh("refresh_token")
@@ -188,7 +188,7 @@ async def test_refresh_user_deleted_or_inactive_raises_unauthorized_error(
     exist and be active in the database."""
     user.is_active = False
     mock_user_repo.get_by_id.return_value = None if user_state == "deleted" else user
-    mock_redis.get.return_value = "1"
+    mock_redis.getdel.return_value = "1"
 
     with pytest.raises(UnauthorizedError):
         await auth_service.refresh("refresh_token")
