@@ -80,8 +80,11 @@ class AuthService:
             raise UnauthorizedError("Refresh token invalide ou expiré")
 
         access_token = create_access_token({"sub": str(user.id)})
+        new_refresh_token = generate_refresh_token()
 
-        return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+        await self._store_or_replace_refresh_token(user.id, new_refresh_token)
+
+        return TokenResponse(access_token=access_token, refresh_token=new_refresh_token)
 
     async def logout(self, user: User) -> None:
         """Logout a user."""
