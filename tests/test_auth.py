@@ -92,6 +92,51 @@ async def test_refresh_invalid_token_returns_401(client: AsyncClient) -> None:
     assert response.status_code == 401
 
 
+async def test_refresh_rotates_the_refresh_token(client: AsyncClient) -> None:
+    """A successful /refresh returns a *different* refresh_token from the one sent,
+    and the old one no longer works — rotation, not reuse."""
+    user_response = await register_user(client)
+    user_email = user_response.json()["email"]
+
+    logged_in_response = await client.post(
+        "/api/v1/login", json={"email": user_email, "password": "password"}
+    )
+    old_refresh_token = logged_in_response.json()["refresh_token"]
+
+    refresh_response = await client.post(
+        "/api/v1/refresh", json={"refresh_token": old_refresh_token}
+    )
+    assert refresh_response.status_code == 200
+    new_refresh_token = refresh_response.json()["refresh_token"]
+    assert new_refresh_token != old_refresh_token
+
+    reuse_response = await client.post(
+        "/api/v1/refresh", json={"refresh_token": old_refresh_token}
+    )
+    assert reuse_response.status_code == 401
+
+
+async def test_refresh_with_rotated_token_still_works(client: AsyncClient) -> None:
+    """The newly rotated refresh_token is itself usable for a subsequent refresh."""
+    user_response = await register_user(client)
+    user_email = user_response.json()["email"]
+
+    logged_in_response = await client.post(
+        "/api/v1/login", json={"email": user_email, "password": "password"}
+    )
+    first_refresh_token = logged_in_response.json()["refresh_token"]
+
+    first_refresh_response = await client.post(
+        "/api/v1/refresh", json={"refresh_token": first_refresh_token}
+    )
+    new_refresh_token = first_refresh_response.json()["refresh_token"]
+
+    second_refresh_response = await client.post(
+        "/api/v1/refresh", json={"refresh_token": new_refresh_token}
+    )
+    assert second_refresh_response.status_code == 200
+
+
 async def test_login_again_invalidates_previous_refresh_token(client: AsyncClient) -> None:
     """Logging in a second time replaces the refresh token: trying to refresh with
     the first (now-superseded) token → 401."""
