@@ -31,6 +31,15 @@ class CategoryService:
 
         return f"category:{key}"
 
+    async def _invalidate_cache(self, key: int | None = None):
+        """Invalidate cache."""
+        # Pattern match + scan(match=...) retourne (cursor, list_of_keys)
+        _, keys_to_invalidate = await self.redis_client.scan(match="category:list:*")
+        await self.redis_client.delete(*keys_to_invalidate)
+
+        if key is not None:
+            await self.redis_client.delete(self._cache_key(key))
+
     async def list_categories(
         self, skip: int = 0, limit: int = 100, name: str | None = None
     ) -> tuple[Sequence[CategoryResponse], int]:
@@ -90,7 +99,9 @@ class CategoryService:
     async def create_category(self, created_by_id: int, data: CategoryCreate) -> Category:
         """Crée une nouvelle catégorie."""
         try:
-            return await self.repository.create(created_by_id=created_by_id, data=data)
+            category = await self.repository.create(created_by_id=created_by_id, data=data)
+            await self._invalidate_cache()
+            return category
         except IntegrityError:
             raise ConflictError(f"Une catégorie avec le nom {data.name} existe déjà.") from None
 
@@ -107,7 +118,7 @@ class CategoryService:
             raise ConflictError(f"Une catégorie avec le nom {data.name} existe déjà.") from None
 
         # Invalidate cache
-        await self.redis_client.delete(self._cache_key(entity_id))
+        await self._invalidate_cache(entity_id)
         return updated
 
     async def delete_category(self, user: User, entity_id: int) -> None:
@@ -119,4 +130,4 @@ class CategoryService:
         await self.repository.delete(category)
 
         # Invalidate cache
-        await self.redis_client.delete(self._cache_key(entity_id))
+        await self._invalidate_cache(entity_id)
