@@ -4,119 +4,196 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-FastAPI To-Do List API built with a Clean Architecture layering, used as a learning project (the author is an experienced PHP/Laravel developer learning Python/FastAPI/SQLAlchemy by building this). Python 3.12, managed with `uv`.
+FastAPI To-Do List API built with a Clean Architecture layering, used as a learning project: the author is an experienced PHP/Laravel developer learning Python/FastAPI/SQLAlchemy by building it. Python 3.12, managed with `uv`. PostgreSQL is the database; Redis is both the category cache and the refresh-token store.
+
+Language conventions, all deliberate:
+
+- Docstrings, code comments, and API error messages (`detail`) are in **French**. Several docstrings carry a Laravel analogy ("Équivalent conceptuel de ... dans Laravel") — keep them, and add one when a new cross-cutting piece has an obvious Laravel counterpart.
+- Test docstrings, `CLAUDE.md`, `README.md` and `CONTRIBUTING.md` are in English.
+
+Branch names, commit messages and PR rules live in `CONTRIBUTING.md`; the PR template is `.github/pull_request_template.md` (Why / Changes / Notes).
 
 ## Commands
 
-All commands run via `uv run <cmd>` (do not assume a global install; the venv is managed by `uv`).
-
-### Running the app
+Everything runs through `uv run`.
 
 ```bash
-docker compose up -d --build   # starts the API (localhost:8000) + Postgres, with hot-reload via a volume mount on ./src
-docker compose logs -f api
-```
+docker compose up -d --build            # API on :8000 (hot-reload on ./src) + Postgres :5432 + Redis :6379
+uv run uvicorn src.main:app --reload    # API on the host, against the compose Postgres/Redis
 
-The app can also run against the same Postgres instance directly on the host (`.env` already points `POSTGRES_HOST` at `localhost`, since the port is exposed by `docker compose`):
-
-```bash
-uv run uvicorn src.main:app --reload
-```
-
-### Tests
-
-```bash
-uv run pytest                                  # full suite (integration + unit)
-uv run pytest tests/test_todos.py              # one file
-uv run pytest tests/test_todos.py::test_name   # one test
+uv run pytest                                  # full suite
 uv run pytest tests/unit/                      # unit tests only
-```
+uv run pytest tests/test_todos.py::test_name   # one test
 
-Integration tests (`tests/test_todos.py`, `tests/test_categories.py`, `tests/test_users.py`, `tests/test_auth.py`) hit a real (in-memory SQLite, via `aiosqlite`) database through the full FastAPI stack, using the `client` fixture from `tests/conftest.py`, which overrides the `get_db_session` dependency. `conftest.py` also force-sets `JWT_SECRET_KEY` via `os.environ[...]` (not `os.environ.setdefault`, unlike `DEBUG` right above it — deliberately different, not an inconsistency to fix) before any `src.*` import, so tests never depend on whatever value a developer's local `.env` happens to have. Unit tests (`tests/unit/`) isolate a single `*Service` class by injecting `unittest.mock.AsyncMock` in place of its repository dependencies — no database involved; `hash_password`/`verify_password`/`create_access_token` (module-level functions in `src/core/security.py`, called directly rather than injected) are mocked instead via `@patch("src.modules.<module>.service.<function_name>", ...)`. When adding a new service method with real SQL logic (filtering, joins, ...), prefer an integration test, since mocking the repository proves nothing about the query itself; reserve unit tests for the service's own branching/orchestration logic.
+uv run ruff check --fix . && uv run ruff format .
 
-For endpoints behind auth, `tests/conftest.py` provides `current_user`/`authenticated_client` (a plain user) and `current_admin_user`/`authenticated_admin` (an admin) — these create the `User` row directly via `UserRepository` (bypassing the API, including `set_admin`/`set_active` for the admin one) and override the `get_current_user` dependency with a plain `lambda: user`, so the request never touches a real JWT. This is the default for permission-matrix tests (self vs. admin vs. forbidden) since it's fast and keeps the test focused on authorization logic. A couple of tests (`test_get_me_with_real_token`/`test_get_me_without_token_returns_401` in `tests/test_users.py`) deliberately go through a real registration + login + `Authorization: Bearer <token>` header instead, to prove the actual JWT/dependency wiring works end to end — that pair is the only place this project re-verifies the real token mechanism rather than relying on the override.
-
-`authenticated_client` and `authenticated_admin` both hand back the *same* underlying `client` object — the override lives on `app.dependency_overrides[get_current_user]`, a single dict entry, not on the client instance. Requesting both fixtures in one test doesn't give you two identities: whichever fixture pytest sets up last (matching the parameter order in the test's signature) wins for the whole test body, silently making the other name an alias for the same user. A test needing two distinct users active in one request flow needs a second identity created without going through an `authenticated_*` fixture — `tests/conftest.py`'s `other_user` fixture creates a plain `User` row (like `current_user`) with no client/override attached, meant to own data created directly via the relevant repository (e.g. `TodoRepository(db_session).create(owner_id=other_user.id, ...)`), never through the API.
-
-### Lint & format
-
-```bash
-uv run ruff check .            # lint (rules: E, F, I, UP, B — see pyproject.toml)
-uv run ruff check --fix .
-uv run ruff format .
-```
-
-Ruff targets `py312` — use native 3.12 syntax (e.g. `class Foo[T]:` generics, not `TypeVar`/`Generic`) rather than older-but-still-valid patterns.
-
-### Database migrations (Alembic)
-
-```bash
 uv run alembic revision --autogenerate -m "description"
 uv run alembic upgrade head
-uv run alembic current
 ```
 
-`alembic/env.py` imports every module's `models.py` explicitly so Alembic's autogenerate can see all tables — a new module's models must be added there too. Always review an autogenerated migration before applying it (Alembic's default template is not `py312`/Ruff-compliant — imports and `Union[...]` type hints typically need fixing to match the rest of the codebase, and `ruff check --fix`/`ruff format` should be run on the generated file).
+### Environment
+
+`.env` targets a host-run API (`POSTGRES_HOST=localhost`, `REDIS_URL=redis://localhost:6379/0`). `docker-compose.yml` overrides `DATABASE_URL` and `REDIS_URL` for the `api` container so they point at the `db`/`redis` service names — a new connection setting needs both places.
+
+`Settings` refuses to start if `JWT_SECRET_KEY` is shorter than 32 bytes or starts with `change-me`, which is exactly what `.env.example` ships. A fresh `cp .env.example .env` therefore crashes at import time until a real secret is set (`openssl rand -hex 32`). Anything that imports `src.core.config` needs the variable, including Alembic — which is why the CI `migrations` job sets it.
+
+### CI
+
+`.github/workflows/ci.yml` runs four independent jobs on every push and PR: `lint`, `format` (`ruff format --check`), `test`, and `migrations` (`alembic upgrade head` against a real Postgres service). The `migrations` job is the only place the migrations themselves, and the Postgres dialect in general, are exercised — the test suite runs on SQLite with `Base.metadata.create_all`, never through Alembic. A fifth job, `docker`, pushes `ghcr.io/<repo>:latest` on pushes to `main` once the other four pass.
+
+### Migrations
+
+`alembic/env.py` imports every module's `models.py` explicitly so autogenerate can see all tables — a new module's models must be added there too. Alembic's default template is not Ruff-compliant (imports, `Union[...]` hints): fix the generated file to match the existing ones in `alembic/versions/`. Review what autogenerate emits for functional indexes (see "Uniqueness" below): the existing migrations declare them by hand with `sa.literal_column("lower(name)")`.
+
+## Tests
+
+Integration tests (`tests/test_*.py`) go through the full FastAPI stack with the `client` fixture, which overrides two dependencies: `get_db_session` (in-memory SQLite via `aiosqlite`, tables created and dropped around every test) and `get_redis_client` (a per-test `fakeredis.FakeAsyncRedis`, exposed as the `redis_client` fixture so a test can inspect or seed keys directly). Unit tests (`tests/unit/`) isolate one `*Service` by passing `AsyncMock` for its repositories and its Redis client; the module-level functions of `src/core/security.py` are called directly by services rather than injected, so they are patched at the import site: `@patch("src.modules.<module>.service.<function_name>")`.
+
+Which kind to write:
+
+- Real SQL logic (filters, joins) → integration test. Mocking the repository proves nothing about the query.
+- Service branching/orchestration, and failure modes that `fakeredis` can't produce (`RedisError`, corrupted cache payload) → unit test with `side_effect`.
+- Cache behaviour (stored, served, invalidated) → integration test with `redis_client`. The "served from cache" tests prove a hit by inserting a row through the repository directly, which bypasses the service's invalidation, then asserting the API still returns the old result.
+
+`conftest.py` force-sets `JWT_SECRET_KEY` with `os.environ[...]` but `DEBUG` with `os.environ.setdefault` right above it, both before any `src.*` import. The difference is deliberate, not an inconsistency to fix: tests must never depend on the secret in a developer's `.env`, while `DEBUG` may be turned on from the shell to see logs.
+
+### Auth fixtures
+
+`current_user`/`authenticated_client` (plain user) and `current_admin_user`/`authenticated_admin` (admin) create the `User` row directly through `UserRepository` and override `get_current_user` with `lambda: user`, so no JWT is involved. This is the default for permission-matrix tests. Only `test_get_me_with_real_token`/`test_get_me_without_token_returns_401` in `tests/test_users.py` send a real `Authorization: Bearer` header obtained from a real login, to prove the JWT/dependency wiring end to end. `tests/test_auth.py` uses real registration + `/login` for the refresh-token flows, because those need tokens actually issued into Redis.
+
+`authenticated_client` and `authenticated_admin` return the *same* `client` object: the override is a single entry in `app.dependency_overrides`, not a property of the client. Requesting both in one test does not give two identities — whichever fixture is set up last (parameter order in the test signature) wins for the whole test. A test that needs a second user takes the `other_user` fixture, a plain `User` row with no client attached, and creates that user's data through the repository (`TodoRepository(db_session).create(owner_id=other_user.id, ...)`), never through the API.
+
+`test_create_category_concurrent_same_name_no_duplicate` is the model for race-condition tests: it bypasses the HTTP layer, opens two independent sessions from `test_session_factory`, calls the service in both under `asyncio.gather`, and checks the row count from a third session.
 
 ## Architecture
 
-### Module layering (Clean Architecture)
+### Module layering
 
-Each domain lives under `src/modules/<name>/` with the same four files, in strict call order:
+Each domain lives under `src/modules/<name>/`, in strict call order:
 
 ```
 router.py → service.py → repository.py → models.py
 ```
 
-- **`models.py`** — SQLAlchemy 2.0 declarative models (`Mapped[...]`, `mapped_column`). No business logic.
-- **`repository.py`** — the only layer that builds/executes SQL (`select`, `.where`, etc.). Takes and returns ORM model instances or primitives; never raises HTTP-related errors, never imports Pydantic schemas beyond what's needed to type method inputs (e.g. `*Create`/`*Update`). Each `<Name>Repository` inherits from `BaseRepository[<Name>]` (see below) for the mechanics shared across resources, and only writes what's actually specific to it.
-- **`service.py`** — business/orchestration logic (uniqueness checks, resolving foreign IDs into objects, deciding what to eager-load). Depends on one or more repositories (a service can depend on another module's repository — e.g. `TodoService` also takes a `CategoryRepository` to resolve `category_ids`). Raises the custom exceptions from `src/core/exceptions.py`, never `fastapi.HTTPException` — the service layer must stay framework-agnostic.
-- **`router.py`** — FastAPI endpoints. Owns the dependency-injection factory (`get_<name>_service`) and the `*ServiceDep` type alias for each module. This is also where request validation (via the request schema type hint) and response serialization (via `response_model`) happen — schemas are read/written here, not deeper in the stack. Convention: in a handler's signature, the injected service dependency is listed **before** the request-body parameter.
+- **`repository.py`** — the only layer that builds or executes SQL. Takes and returns ORM instances or primitives, never raises HTTP-flavoured errors, imports schemas only to type its inputs (`*Create`/`*Update`). Lets `IntegrityError` propagate.
+- **`service.py`** — business and orchestration logic: permissions, resolving foreign IDs into objects, deciding what to eager-load, translating `IntegrityError`, caching. May depend on another module's repository (`TodoService` takes a `CategoryRepository` to resolve `category_ids`; `AuthService` takes a `UserRepository`). Raises the exceptions from `src/core/exceptions.py`, never `fastapi.HTTPException`.
+- **`router.py`** — endpoints, the `get_<name>_service` factory and the `*ServiceDep` alias. Request validation and response serialization happen here. Convention: in a handler signature the injected service comes **before** `current_user`, path params and the request body.
 
-`src/core/` holds cross-cutting pieces used by every module: `database.py` (async engine/session, `Base`, the `get_db_session` FastAPI dependency), `config.py` (`pydantic-settings`, reads `.env`), `exceptions.py` (`NotFoundError` → 404, `ConflictError` → 409, `ForbiddenError` → 403, `UnauthorizedError` → 401 — all generic, not per-resource, each with a matching `@app.exception_handler` in `main.py`), `schemas.py` (the generic `PaginatedResponse[T]`), and `security.py` (password hashing via `argon2-cffi`'s `PasswordHasher`, and JWT `create_access_token`/`decode_access_token` via `pyjwt`).
+Services return ORM models and the router serializes them through `response_model`. The one deliberate exception is the cached read path of `CategoryService` (`list_categories`, `get_category_cached`), which returns `CategoryResponse` objects: a cache hit yields JSON, and an ORM instance can't be rebuilt from it, so both the hit and the miss path return the schema to keep one return type. Don't generalize this to uncached services.
+
+`auth` has no `models.py`/`repository.py` (it owns no table), and `todos_categories` holds only the association `Table`.
+
+`src/core/` is what every module shares:
+
+| File | Role |
+|---|---|
+| `database.py` | Async engine, `Base` (declares `id` — no model repeats it), `get_db_session`: **one transaction per request**, committed after the handler returns, rolled back on any exception. Repositories only `flush()`. |
+| `config.py` | `pydantic-settings`, reads `.env`. |
+| `exceptions.py` | `NotFoundError` → 404, `ConflictError` → 409, `ForbiddenError` → 403, `UnauthorizedError` → 401. Generic, not per-resource; each has an `@app.exception_handler` in `main.py`. |
+| `repository.py` | `BaseRepository` (below). |
+| `schemas.py` | `PaginatedResponse[T]`. |
+| `security.py` | Argon2 password hashing, JWT access tokens, refresh-token generation and hashing. |
+| `redis.py` | The shared async client (`decode_responses=True`, so values come back as `str`), the `get_redis_client` dependency, and `hash_redis_key`. |
+| `logging.py` | `structlog` setup. |
 
 ### Generic repository layer
 
-`src/core/repository.py` defines `BaseRepository[ModelT: Base]`, inherited by `TodoRepository`/`CategoryRepository`/`UserRepository`. It provides `get_by_id`, `update`, `delete`, `paginate`, and `count_query` — genuinely identical across resources, not just similarly shaped. `Base` (`src/core/database.py`) declares `id` itself; no model repeats it.
+`BaseRepository[ModelT: Base]` provides `get_by_id`, `update`, `delete`, `paginate` and `count_query` — the parts that are genuinely identical across resources.
 
-`TodoRepository` only inherits `delete`/`paginate`/`count_query` — its own `get_by_id`/`update` stay locally defined (`# pyrefly: ignore[bad-override]`), because `owner_id`/`categories` are required parameters the shared signature can't express without weakening the "no default" guarantee from the Ownership section above. This divergence is deliberate, not a gap to unify.
+`TodoRepository` keeps its own `get_by_id`/`update` (`# pyrefly: ignore[bad-override]`), because `owner_id`/`categories` are required parameters the shared signature can't express without weakening the "no default" guarantee described under Ownership. This divergence is deliberate, not a gap to unify.
 
-`get_all`/`count`/`_apply_filters` stay per-repository (filters differ too much to share), but each `_apply_filters` funnels its plain-equality/partial-match filters through `BaseRepository._apply_filter_params` via a `list[FilterParams]` (`NamedTuple(column, value, op: Literal["eq", "ilike"])`), keeping filter parameters named and typed rather than a dict. `Todo.category_ids` (many-to-many `.any()`) and `User.name` (`ilike` across two columns) don't fit `eq`/`ilike` and stay hand-written alongside.
+`get_all`/`count` stay per-repository, and both go through that repository's private `_apply_filters`, so the page and its total can never drift apart. Plain equality and partial-match filters are passed to `BaseRepository._apply_filter_params` as a `list[FilterParams]` (`NamedTuple(column, value, op: Literal["eq", "ilike"])`) — named and typed, never a dict. Filters that don't fit (`Todo.category_ids` via `.any()`, `User.name` across two columns) are written by hand next to it.
 
-### Authentication & authorization
+### Uniqueness and race conditions
 
-`users` and `auth` are separate modules: `users` owns the `User` resource (profile CRUD, admin-gated user management), `auth` owns authentication itself (login, JWT issuance/validation). `AuthService` depends on `UserRepository` directly (same "service can depend on another module's repository" pattern as `TodoService`/`CategoryRepository`).
+`Category.name`, `User.email` and `User.pseudo` are unique **case-insensitively**, enforced by functional unique indexes (`uq_categories_name_lower`, `uq_users_email_lower`, `uq_users_pseudo_lower`, all on `lower(column)`), not by a `SELECT` before the `INSERT`. Services deliberately do no pre-check: two concurrent requests would both pass it. They call the repository, catch `IntegrityError`, and raise `ConflictError`.
 
-A JWT's payload is intentionally minimal — `create_access_token({"sub": str(user.id)})`, nothing else; `is_admin`/`is_active` are never baked into it. `get_current_user` (in `auth/router.py`, exposed as `CurrentUserDep` and imported by other routers the same way `categories/router.py` imports `TodoServiceDep`) always re-fetches the `User` from the DB via `UserRepository.get_by_id`.
+Consequences to keep in mind:
 
-`is_admin`/`is_active` are never settable through the general `PATCH /users/{id}` (`UserUpdate` has no such fields — passing them is silently dropped by Pydantic, not an error) — only through the dedicated `PATCH /users/{id}/active` / `.../admin` endpoints, both gated on `current_user.is_admin`, backed by their own repository methods (`set_active`/`set_admin`) that `UserService.update_user`'s general path never calls. `set_user_active`/`set_user_admin` additionally refuse to deactivate or demote the *last* active admin (`repository.count(is_admin=True, is_active=True) == 1`) — note the `is_active=True` filter matters here: counting `is_admin=True` alone would also count already-deactivated admins, undercounting how many admins are actually usable.
+- `UserService` has two unique columns, so it tells them apart by looking for the **index name** inside `str(e)` and re-raises anything it doesn't recognize. The index names are therefore part of the logic: renaming one in the model without updating the service turns a 409 into an unhandled 500. Both Postgres and SQLite include the index name in the error message, which is what lets the SQLite suite cover this.
+- A new unique column follows the same pattern: named functional index in `__table_args__`, hand-checked migration, `IntegrityError` → `ConflictError` in the service, and a `..._with_unrelated_integrity_error_reraises` style unit test.
+- The plain `index=True` on those columns is kept alongside the unique one for `ilike` filtering.
+
+### Authentication
+
+`users` owns the `User` resource; `auth` owns authentication (`POST /login`, `/refresh`, `/logout`, and `get_current_user`).
+
+**Access token** — a JWT whose payload is only `{"sub": str(user.id), "exp": ...}`, valid 15 minutes. `is_admin`/`is_active` are never baked in: `get_current_user` (exposed as `CurrentUserDep`, imported by every other router) re-fetches the `User` on each request and rejects inactive users, so a role change or deactivation applies immediately. The scheme is `HTTPBearer`, not `OAuth2PasswordBearer`: login takes a JSON body (`LoginRequest`), not the OAuth2 form.
+
+**Refresh token** — an opaque random string (`secrets.token_urlsafe`), not a JWT, valid `REFRESH_TOKEN_EXPIRE_DAYS`. Redis only ever stores its SHA-256, under two keys with the same TTL:
+
+```
+refresh_token:token:<sha256>   → user_id     # lookup on /refresh
+refresh_token:user:<user_id>   → <sha256>    # find and revoke the user's current token
+```
+
+Rules, all deliberate:
+
+- **One refresh token per user.** Logging in again replaces the previous one, so a second device logs the first one out at its next refresh.
+- **Rotation on every `/refresh`.** The presented token is consumed with `GETDEL`, so two concurrent refreshes with the same token can't both succeed, and a new pair is issued.
+- **No reuse detection.** Replaying a rotated token just returns 401; it does not revoke the current one.
+- `/refresh` re-checks that the user still exists and is active, and returns the same 401 message for every failure.
+- `/logout` requires a valid access token and deletes both keys.
+- SHA-256 rather than Argon2 because the token is high-entropy and must be looked up by its hash. `hash_redis_key` (MD5) is a different thing: it only shortens cache keys and has no security role.
+
+**Roles** — `is_admin`/`is_active` are not settable through `PATCH /users/{id}` (`UserUpdate` has no such fields; Pydantic drops them silently). They change only through `PATCH /users/{id}/active` and `.../admin`, both admin-only and backed by dedicated repository methods (`set_active`/`set_admin`). Both refuse to deactivate or demote the last usable admin, counted as `count(is_admin=True, is_active=True) == 1` — the `is_active=True` part matters, otherwise already-deactivated admins would be counted as available.
 
 ### Ownership & permissions
 
-`Todo.owner_id` and `Category.created_by_id` are deliberately named differently, because the two resources treat their owning user differently. A todo is private to its `owner_id`: `TodoRepository.get_all`/`get_by_id`/`count` all take an `owner_id: int | None` filter, and `TodoService` computes it as `current_user.id if not current_user.is_admin else None` (`None` disables the filter for admins) before calling the repository — so ownership enforcement lives in one place, the repository's `WHERE`, not scattered across services. A category, by contrast, is visible to every authenticated user regardless of who created it; `created_by_id` only gates *mutation* (see below), never visibility, which is why `CategoryRepository`/`CategoryService` have no equivalent filter parameter at all.
+`Todo.owner_id` and `Category.created_by_id` are named differently on purpose: the two resources treat their user differently.
 
-Requesting another user's todo (`GET`/`PATCH`/`DELETE /todos/{id}`) raises `NotFoundError`, never `ForbiddenError` — the `owner_id` filter makes the row simply not match, so the service can't tell "doesn't exist" apart from "exists but isn't yours", and deliberately doesn't try to: returning 403 would leak that the ID is in use by someone else. `TodoRepository.get_by_id`'s `owner_id` parameter is keyword-only (`*, owner_id: int | None`) with no default, specifically because it sits next to `entity_id`, another plain `int` — a positional call could silently swap the two without either FastAPI or a type checker catching it, and no default forces every caller to state its intent explicitly rather than accidentally inheriting an unfiltered query.
+**Todos are private.** `TodoRepository.get_all`/`get_by_id`/`count` take an `owner_id: int | None` filter; `TodoService` computes it as `current_user.id`, or `None` for an admin, which disables the filter. Ownership is enforced in one place, the repository's `WHERE`. Requesting someone else's todo therefore raises `NotFoundError`, never `ForbiddenError`: the row simply doesn't match, and a 403 would reveal that the ID exists. `get_by_id`'s `owner_id` is keyword-only with no default because it sits next to `entity_id`, another `int` — a positional call could swap them unnoticed, and a default would let a caller inherit an unfiltered query by accident.
 
-`owner_id`/`created_by_id` are never accepted from the request body (`TodoCreate`/`CategoryCreate` have no such field — a client-supplied value would be silently ignored if it were, since nothing reads it) — both are passed into `repository.create(...)` as a separate keyword argument sourced from `current_user.id`, the same pattern `UserRepository.create` already uses for `hashed_password`.
+**Categories are shared.** Every authenticated user can list, read and create them; `created_by_id` gates mutation only. `update_category` requires admin or creator; `delete_category` requires admin — the creator cannot delete their own category. The checks are ordered differently on purpose: `update_category` fetches the row first because it needs `created_by_id` to decide, while `delete_category` checks `is_admin` before touching the repository, since the answer doesn't depend on the row (same order as `UserService.set_user_active`/`set_user_admin`).
 
-Category permissions split `create` from `update`/`delete`: any authenticated user may create a category (`created_by_id=current_user.id`, no ownership check possible since it doesn't exist yet) or list/read one, but `update_category` only proceeds if `current_user.is_admin or category.created_by_id == current_user.id`, and `delete_category` requires `current_user.is_admin` outright — the creator alone cannot delete their own category. The two checks are ordered differently on purpose: `update_category` calls `get_category_or_404` first because it needs the row's `created_by_id` before it can decide anything, while `delete_category` checks `is_admin` *before* touching the repository at all, since that decision never depends on which category was asked for (mirrors `UserService.set_user_active`/`set_user_admin`, which check `current_user.is_admin` before fetching the target user for the same reason).
+`owner_id`/`created_by_id` are never read from the request body. They are passed to `repository.create(...)` as a separate keyword argument taken from `current_user.id`, like `hashed_password` in `UserRepository.create`.
 
-`list_categories` and `get_category_or_404` take no `current_user` parameter at all, unlike their `todos` equivalents — nothing below the router enforces authentication on those two routes. `CurrentUserDep` on `GET /categories` and `GET /categories/{id}` is a router-only guard with no structural backup: on `todos`, removing `CurrentUserDep` from a handler would break the `owner_id` computation and crash immediately, but here the service would keep working fine without it, silently making categories public again. This asymmetry is why `tests/test_categories.py` has explicit "no token → 401" tests for `list`/`get` specifically, while `tests/test_todos.py` deliberately doesn't bother with the equivalent (see the Tests section above).
+`CategoryService.list_categories`, `get_category_cached` and `get_category_or_404` take no `current_user`. `CurrentUserDep` on `GET /categories` and `GET /categories/{id}` is thus a router-only guard with nothing behind it: on `todos`, removing it would break the `owner_id` computation immediately, but here the endpoint would silently become public. That is why `tests/test_categories.py` has explicit "no token → 401" tests for list/get and `tests/test_todos.py` doesn't need them.
 
-`CategoryResponse` exposes `created_by_id` to every caller who can see the category at all, the same way `TodoResponse` exposes `owner_id` and `UserResponse` exposes `is_admin`/`is_active` — this codebase never hides an individual field from a response based on the viewer's role; a resource is either accessible (and returned whole) or it isn't (401/403/404), permission logic never reaches inside an already-authorized payload.
+Responses are never filtered field by field according to the viewer's role (`CategoryResponse.created_by_id`, `TodoResponse.owner_id`, `UserResponse.is_admin`/`is_active` are visible to anyone who can see the resource). A resource is either accessible and returned whole, or it is a 401/403/404.
+
+### Category cache
+
+Only categories are cached: they are shared, read by everyone, and rarely written. Todos are per-user and are not cached. All of it lives in `CategoryService`; the repository knows nothing about Redis.
+
+```
+category:<id>                                 → CategoryResponse JSON               (TTL 8h)
+categories:list:<gen>:<md5(skip,limit,name)>  → {"categories": [...], "total": n}   (TTL 8h)
+categories:list:gen                           → integer generation counter          (no TTL)
+```
+
+- **List invalidation is by generation.** A list can be cached under any combination of `skip`/`limit`/`name`, so instead of finding and deleting those keys, every create/update/delete does `INCR categories:list:gen`. Old entries become unreachable and expire on their own.
+- **Item invalidation** is a `DEL category:<id>` on update and delete.
+- **Redis is optional at runtime.** Every cache read, write and invalidation catches `RedisError` (and, on reads, an unparsable payload), logs a warning (`redis_unavailable` / `cache_corrupted`) and falls back to the database. A cache problem must never turn into a 5xx. This applies to the cache only: the refresh-token store has no fallback, and auth fails if Redis is down.
+- `get_category_or_404` is the **uncached** read. Use it for anything that then mutates the row or needs an ORM instance (`update_category`, `delete_category`, the existence check of `GET /categories/{id}/todos`); only `GET /categories/{id}` uses `get_category_cached`.
 
 ### Cross-module relationships
 
-`todos` and `categories` are many-to-many, backed by a third module, `src/modules/todos_categories/`, holding only the SQLAlchemy association `Table` (not a mapped class — it has no columns beyond the two FKs, both `ON DELETE CASCADE`). `Todo.categories` / `Category.todos` are declared via `relationship(secondary=todos_categories, back_populates=...)`.
+`todos` and `categories` are many-to-many through `src/modules/todos_categories/`, a plain association `Table` with two `ON DELETE CASCADE` FKs. `todos/models.py` and `categories/models.py` import each other's class only under `TYPE_CHECKING`; the `todos_categories` table is imported normally by both, which is safe because it references `"todos.id"`/`"categories.id"` as strings and imports neither class.
 
-`todos/models.py` and `categories/models.py` need each other's class only for the relationship's type hint (`Mapped[list["Category"]]`), so that cross-import is done under `if TYPE_CHECKING:` with the class referenced as a string. The `secondary=todos_categories` table object, by contrast, *is* needed at class-body evaluation time, so it's imported normally (safe here because `todos_categories/models.py` only references `"todos.id"`/`"categories.id"` as FK strings, never importing the `Todo`/`Category` classes themselves).
+Dependencies between the two modules point one way, `categories → todos` at the router level and `todos → categories` at the schema level, never both for the same layer:
 
-`todos/schemas.py` imports `CategoryResponse` from `categories/schemas.py` directly (one-directional, safe) to build `TodoDetailResponse` (`?include=categories` on `GET /todos/{id}`). The reverse (a category's todos) is deliberately **not** modeled as a nested Pydantic schema, to avoid the schema-level circular import a `CategoryDetailResponse` referencing `TodoResponse` would create — it's exposed instead as its own endpoint, `GET /categories/{id}/todos` → `PaginatedResponse[TodoResponse]`.
+- `todos/schemas.py` imports `CategoryResponse` to build `TodoDetailResponse` (`GET /todos/{id}?include=categories`).
+- The reverse is **not** a nested schema, which would make the schema import circular. A category's todos are a separate endpoint, `GET /categories/{id}/todos` → `PaginatedResponse[TodoResponse]`.
+- That endpoint is a router depending on another module's *service*: `categories/router.py` imports `TodoServiceDep` and delegates to `TodoService.list_todos(category_ids=[category_id], ...)` instead of re-implementing pagination and ownership filtering. It calls `get_category_or_404` first only to return a real 404 for a missing category, where the todo query alone would return an empty page.
 
-That same endpoint is also an example of a **router depending on another module's service**, not just a service depending on another module's repository: `categories/router.py` imports `TodoServiceDep` from `todos/router.py` and delegates to `TodoService.list_todos(category_ids=[category_id], ...)` rather than re-implementing pagination/filtering against `Category.todos`. `CategoryService.get_category_or_404` is still called first, purely to get a real 404 when the category itself doesn't exist (`GET /todos?category_ids=<missing>` would otherwise just return an empty page, not an error). Safe for the same reason as the schema-level import: `todos/router.py` never imports from `categories/router.py`.
+So `categories/schemas.py` must never import from `todos/schemas.py`, and `todos/router.py` must never import from `categories/router.py`.
 
 ### Optional includes and pagination
 
-Detail endpoints that can optionally return a related collection (e.g. `GET /todos/{id}`) take an `include` query param (`list[str] | None = None`, never a mutable `[]` default) and branch between two response schemas (`response_model=TodoResponse | TodoDetailResponse`), constructing the right one explicitly with `.model_validate(...)` in the handler — FastAPI can't infer which union member to use on its own. The repository method backing this takes a `with_<relation>: bool = False` flag that conditionally adds a `selectinload(...)` option to the query.
+`GET /todos/{id}` takes an `include` query param and declares `response_model=TodoResponse | TodoDetailResponse`; the handler builds the right one explicitly with `.model_validate(...)`, since FastAPI can't choose a union member itself. The repository method takes a matching `with_<relation>: bool = False` flag that adds a `selectinload`.
 
-List endpoints (e.g. `GET /todos`) return `PaginatedResponse[T]` (`src/core/schemas.py`) rather than a bare list, so `response_model` on those routes must be `PaginatedResponse[TodoResponse]`, not `list[TodoResponse]` — the two are not interchangeable and mixing them up produces a `ResponseValidationError`, not a silent wrong response. The service returns `tuple[Sequence[Model], int]` (items, total); the router builds the envelope. Repositories expose matching `get_all(...)`/`count(...)` methods that both funnel their filter conditions through a shared private `_apply_filters(query, ...)` helper, so the two queries can never drift out of sync. Multi-value filters on a many-to-many field (e.g. `category_ids`) use union/OR semantics (`Model.relationship.any(Other.id.in_(ids))`), which is the standard convention for repeated query params. Free-text filters (e.g. `name`, `title`) use `Column.ilike(f"%{value}%")` with `Query(min_length=2, ...)` to keep single-character searches from matching everything.
+List endpoints return `PaginatedResponse[T]`: the service returns `(items, total)` and the router builds the envelope. Multi-value filters on a many-to-many field (`category_ids`) use OR semantics. Free-text filters use `ilike` with `Query(min_length=2)` so a one-character search can't match everything.
+
+### Logging and request IDs
+
+`structlog` renders JSON. The `log_requests` middleware in `main.py` clears the context vars, binds a `request_id`, logs one `request_completed` event per request, and echoes the ID in the `X-Request-ID` response header. An incoming `X-Request-ID` is reused only if it is at most 64 characters, otherwise a UUID is generated. Any `structlog.get_logger()` call made during a request inherits the `request_id` automatically — don't pass it around by hand.
+
+## Known limitations
+
+Accepted for now; don't "fix" them as a side effect of other work, and don't describe the system as if they were solved.
+
+- **Cache invalidation runs before the commit.** `_invalidate_cache` is called inside the service, but the transaction commits when `get_db_session` exits. A concurrent read in that window can re-cache the pre-update row for up to 8 hours.
+- **Request logs are off outside debug.** The log level is `DEBUG` when `settings.DEBUG` is true and `WARNING` otherwise, so `request_completed` (info) is only emitted in debug mode.
+- **Logout does not revoke the access token.** It stays valid until it expires (15 minutes at most).
+- **The published image is a dev image.** The `Dockerfile` starts uvicorn with `--reload`, and that is what CI pushes to GHCR.
