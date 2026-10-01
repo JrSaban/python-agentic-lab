@@ -120,20 +120,26 @@ Consequences to keep in mind:
 
 **Access token** — a JWT whose payload is only `{"sub": str(user.id), "exp": ...}`, valid 5 minutes. `is_admin`/`is_active` are never baked in: `get_current_user` (exposed as `CurrentUserDep`, imported by every other router) re-fetches the `User` on each request and rejects inactive users, so a role change or deactivation applies immediately. The scheme is `HTTPBearer`, not `OAuth2PasswordBearer`: login takes a JSON body (`LoginRequest`), not the OAuth2 form.
 
-**Refresh token** — an opaque random string (`secrets.token_urlsafe`), not a JWT, valid `REFRESH_TOKEN_EXPIRE_DAYS`. Redis only ever stores its SHA-256, under two keys with the same TTL:
+**Refresh token** — an opaque random string (`secrets.token_urlsafe`), not a JWT, valid `REFRESH_TOKEN_EXPIRE_DAYS` and rotated on every use. Redis only ever stores its SHA-256, under three keys:
 
 ```
-refresh_token:token:<sha256>   → user_id     # lookup on /refresh
-refresh_token:user:<user_id>   → <sha256>    # find and revoke the user's current token
+refresh_token:token:<sha256>          → user_id     # lookup on /refresh
+refresh_token:user:<user_id>          → <sha256>    # find and revoke the user's current token
+refresh_token:session_start:<user_id> → timestamp   # when this session began; set at login only
 ```
+
+The first two share the sliding `REFRESH_TOKEN_EXPIRE_DAYS` TTL, reset on every login and refresh.
+`session_start` uses its own, longer `REFRESH_TOKEN_ABSOLUTE_MAX_DAYS` TTL and is written only by
+`login()` — `refresh()` never touches it.
 
 Rules, all deliberate:
 
 - **One refresh token per user.** Logging in again replaces the previous one, so a second device logs the first one out at its next refresh.
 - **Rotation on every `/refresh`.** The presented token is consumed with `GETDEL`, so two concurrent refreshes with the same token can't both succeed, and a new pair is issued.
+- **An absolute session lifetime independent of activity.** Rotation alone would let a session renew itself forever as long as the user stays active. `session_start` closes that: checked right after the token lookup and before the DB call, it rejects with the same 401 once it's gone, regardless of how valid the presented token otherwise is.
 - **No reuse detection.** Replaying a rotated token just returns 401; it does not revoke the current one.
 - `/refresh` re-checks that the user still exists and is active, and returns the same 401 message for every failure.
-- `/logout` requires a valid access token and deletes both keys.
+- `/logout` requires a valid access token and deletes all three keys.
 - SHA-256 rather than Argon2 because the token is high-entropy and must be looked up by its hash. `hash_redis_key` (MD5) is a different thing: it only shortens cache keys and has no security role.
 
 **Roles** — `is_admin`/`is_active` are not settable through `PATCH /users/{id}` (`UserUpdate` has no such fields; Pydantic drops them silently). They change only through `PATCH /users/{id}/active` and `.../admin`, both admin-only and backed by dedicated repository methods (`set_active`/`set_admin`). Both refuse to deactivate or demote the last usable admin, counted as `count(is_admin=True, is_active=True) == 1` — the `is_active=True` part matters, otherwise already-deactivated admins would be counted as available.
