@@ -553,3 +553,33 @@ async def test_deleted_todo_excluded_from_category_todos(
     data = response.json()
     assert data["total"] == 0
     assert data["items"] == []
+
+
+async def test_delete_already_deleted_todo_returns_404(authenticated_client: AsyncClient) -> None:
+    """Deleting a todo twice: the second DELETE sees it as gone, like any other request."""
+    todo = await authenticated_client.post("/api/v1/todos", json={"title": "Tâche 1"})
+    todo_id = todo.json()["id"]
+
+    first_response = await authenticated_client.delete(f"/api/v1/todos/{todo_id}")
+    assert first_response.status_code == 204
+
+    second_response = await authenticated_client.delete(f"/api/v1/todos/{todo_id}")
+    assert second_response.status_code == 404
+
+
+async def test_patch_deleted_todo_returns_404(
+    authenticated_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """A soft-deleted todo can't be updated: PATCH returns 404 and the row keeps the
+    values it had when it was deleted."""
+    todo = await authenticated_client.post("/api/v1/todos", json={"title": "Tâche 1"})
+    todo_id = todo.json()["id"]
+    await authenticated_client.delete(f"/api/v1/todos/{todo_id}")
+
+    response = await authenticated_client.patch(
+        f"/api/v1/todos/{todo_id}", json={"title": "Tâche modifiée"}
+    )
+    assert response.status_code == 404
+
+    result = await db_session.execute(select(Todo).where(Todo.id == todo_id))
+    assert result.scalar_one().title == "Tâche 1"
