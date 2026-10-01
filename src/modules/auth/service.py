@@ -70,7 +70,8 @@ class AuthService:
         """Refresh a user token."""
         hashed_refresh_token = hash_refresh_token(refresh_token)
         user_id = cast(
-            str | None, await self.redis_client.get(self._redis_key("token", hashed_refresh_token))
+            str | None,
+            await self.redis_client.getdel(self._redis_key("token", hashed_refresh_token)),
         )
         if user_id is None:
             raise UnauthorizedError("Refresh token invalide ou expiré")
@@ -80,8 +81,11 @@ class AuthService:
             raise UnauthorizedError("Refresh token invalide ou expiré")
 
         access_token = create_access_token({"sub": str(user.id)})
+        new_refresh_token = generate_refresh_token()
 
-        return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+        await self._store_or_replace_refresh_token(user.id, new_refresh_token)
+
+        return TokenResponse(access_token=access_token, refresh_token=new_refresh_token)
 
     async def logout(self, user: User) -> None:
         """Logout a user."""

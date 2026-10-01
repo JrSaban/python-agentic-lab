@@ -132,19 +132,38 @@ async def test_login_replaces_existing_refresh_token(
 async def test_refresh_success(
     mock_create_access_token, auth_service, mock_user_repo, mock_redis, user
 ):
-    """A valid, still-stored refresh token returns a new access token and the same
-    refresh token, without touching its Redis entries (no rotation)."""
+    """A valid, still-stored refresh token returns a new access token and a *new*
+    refresh token — rotation replaces the token's Redis entries on every refresh."""
     mock_user_repo.get_by_id.return_value = user
-    mock_redis.get.return_value = "1"
+    mock_redis.getdel.return_value = "1"
 
     result = await auth_service.refresh("refresh_token")
 
-    mock_redis.get.assert_called_once_with(token_key("refresh_token"))
+    mock_redis.getdel.assert_called_once_with(token_key("refresh_token"))
     mock_user_repo.get_by_id.assert_called_once_with(1)
     mock_create_access_token.assert_called_once_with({"sub": "1"})
-    mock_redis.set.assert_not_called()
+    assert mock_redis.set.call_count == 2
     assert result.access_token == "new_access_token"
-    assert result.refresh_token == "refresh_token"
+    assert result.refresh_token != "refresh_token"
+
+
+@patch("src.modules.auth.service.create_access_token", return_value="new_access_token")
+async def test_refresh_replaces_existing_refresh_token(
+    mock_create_access_token, auth_service, mock_user_repo, mock_redis, user
+):
+    """refresh() atomically swaps the user's token (SET ... GET) and deletes the
+    previous token's key — same rotation mechanics as login()."""
+    mock_user_repo.get_by_id.return_value = user
+    mock_redis.getdel.return_value = "1"
+    mock_redis.set.return_value = "old_hash"
+
+    result = await auth_service.refresh("refresh_token")
+
+    first_set, second_set = mock_redis.set.call_args_list
+    assert first_set.args[0] == token_key(result.refresh_token)
+    assert second_set.args[0] == "refresh_token:user:1"
+    assert second_set.kwargs["get"] is True
+    mock_redis.delete.assert_called_once_with("refresh_token:token:old_hash")
 
 
 async def test_refresh_unknown_token_raises_unauthorized_error(
@@ -152,12 +171,12 @@ async def test_refresh_unknown_token_raises_unauthorized_error(
 ):
     """A refresh token absent from Redis (never issued, expired, or already revoked)
     raises UnauthorizedError without querying the database."""
-    mock_redis.get.return_value = None
+    mock_redis.getdel.return_value = None
 
     with pytest.raises(UnauthorizedError):
         await auth_service.refresh("refresh_token")
 
-    mock_redis.get.assert_called_once_with(token_key("refresh_token"))
+    mock_redis.getdel.assert_called_once_with(token_key("refresh_token"))
     mock_user_repo.get_by_id.assert_not_called()
 
 
@@ -169,7 +188,7 @@ async def test_refresh_user_deleted_or_inactive_raises_unauthorized_error(
     exist and be active in the database."""
     user.is_active = False
     mock_user_repo.get_by_id.return_value = None if user_state == "deleted" else user
-    mock_redis.get.return_value = "1"
+    mock_redis.getdel.return_value = "1"
 
     with pytest.raises(UnauthorizedError):
         await auth_service.refresh("refresh_token")
