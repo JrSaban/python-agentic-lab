@@ -22,17 +22,29 @@ class Category(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     color: Mapped[str] = mapped_column(String(7), nullable=False, default="#FAFAFA")
 
-    __table_args__ = (Index("uq_categories_name_lower", func.lower(name), unique=True),)
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     todos: Mapped[list["Todo"]] = relationship(
         secondary=todos_categories,
         back_populates="categories",
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_categories_name_lower",
+            func.lower(name),
+            unique=True,
+            postgresql_where=deleted_at.is_(None),
+            sqlite_where=deleted_at.is_(None),
+        ),
     )
 
     def __repr__(self) -> str:
