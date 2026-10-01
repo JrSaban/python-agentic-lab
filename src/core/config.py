@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     # Refresh Token
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    REFRESH_TOKEN_ABSOLUTE_MAX_DAYS: int = 90
 
     @field_validator("JWT_SECRET_KEY")
     @classmethod
