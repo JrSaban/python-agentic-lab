@@ -255,9 +255,12 @@ async def test_logout_deletes_refresh_token(auth_service, mock_redis, user):
     mock_redis.delete.assert_any_call("refresh_token:token:stored_hash")
 
 
-async def test_logout_without_existing_refresh_token_does_nothing(auth_service, mock_redis, user):
+async def test_logout_without_existing_refresh_token_only_clears_session_marker(
+    auth_service, mock_redis, user
+):
     """Logging out a user with no stored refresh token (already logged out, or never
-    logged in) doesn't raise and deletes nothing."""
+    logged in) doesn't raise: the session marker is still cleared, but there is no
+    token key to delete."""
     mock_redis.getdel.return_value = None
 
     await auth_service.logout(user)
