@@ -424,6 +424,25 @@ async def test_update_category_name_conflict_returns_409(authenticated_client: A
     assert response.json()["detail"] == "Une catégorie avec le nom house existe déjà."
 
 
+async def test_update_category_reuses_name_of_deleted_category(
+    authenticated_admin: AsyncClient,
+) -> None:
+    """Renaming a category to the name of a soft-deleted one succeeds — the partial
+    unique index doesn't count deleted rows, whether the write is an INSERT or an
+    UPDATE."""
+    deleted_cat = await authenticated_admin.post("/api/v1/categories", json={"name": "Sport"})
+    await authenticated_admin.delete(f"/api/v1/categories/{deleted_cat.json()['id']}")
+
+    create_res = await authenticated_admin.post("/api/v1/categories", json={"name": "House"})
+    category_id = create_res.json()["id"]
+
+    response = await authenticated_admin.patch(
+        f"/api/v1/categories/{category_id}", json={"name": "Sport"}
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "Sport"
+
+
 async def test_update_category_keep_same_name_succeeds(authenticated_client: AsyncClient) -> None:
     """Renaming a category to its own current name doesn't trigger a 409 Conflict."""
     # 1. Création de la catégorie
