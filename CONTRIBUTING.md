@@ -39,3 +39,6 @@ fix: catch IntegrityError on category create
   ```
 
 - If the PR includes an Alembic migration, say so in the "Notes" section (`uv run alembic upgrade head`).
+- The PR that finishes a task updates `CLAUDE.md`/`README.md` for it and removes the matching item
+  from `ROADMAP.md`, in the same PR — not a separate docs pass afterward. A task only merges once
+  it's actually done, so this never leaves `main` out of sync with its own docs.
