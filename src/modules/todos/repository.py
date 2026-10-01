@@ -3,9 +3,8 @@ Repository Pattern pour l'accès aux données de Todo.
 Encapsule les requêtes SQL (SQLAlchemy 2.0 select, add, delete).
 """
 
-from datetime import datetime
-from datetime import UTC
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
