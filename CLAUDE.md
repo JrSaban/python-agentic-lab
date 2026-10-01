@@ -118,7 +118,7 @@ Consequences to keep in mind:
 
 `users` owns the `User` resource; `auth` owns authentication (`POST /login`, `/refresh`, `/logout`, and `get_current_user`).
 
-**Access token** — a JWT whose payload is only `{"sub": str(user.id), "exp": ...}`, valid 15 minutes. `is_admin`/`is_active` are never baked in: `get_current_user` (exposed as `CurrentUserDep`, imported by every other router) re-fetches the `User` on each request and rejects inactive users, so a role change or deactivation applies immediately. The scheme is `HTTPBearer`, not `OAuth2PasswordBearer`: login takes a JSON body (`LoginRequest`), not the OAuth2 form.
+**Access token** — a JWT whose payload is only `{"sub": str(user.id), "exp": ...}`, valid 5 minutes. `is_admin`/`is_active` are never baked in: `get_current_user` (exposed as `CurrentUserDep`, imported by every other router) re-fetches the `User` on each request and rejects inactive users, so a role change or deactivation applies immediately. The scheme is `HTTPBearer`, not `OAuth2PasswordBearer`: login takes a JSON body (`LoginRequest`), not the OAuth2 form.
 
 **Refresh token** — an opaque random string (`secrets.token_urlsafe`), not a JWT, valid `REFRESH_TOKEN_EXPIRE_DAYS`. Redis only ever stores its SHA-256, under two keys with the same TTL:
 
@@ -195,5 +195,5 @@ Accepted for now; don't "fix" them as a side effect of other work, and don't des
 
 - **Cache invalidation runs before the commit.** `_invalidate_cache` is called inside the service, but the transaction commits when `get_db_session` exits. A concurrent read in that window can re-cache the pre-update row for up to 8 hours.
 - **Request logs are off outside debug.** The log level is `DEBUG` when `settings.DEBUG` is true and `WARNING` otherwise, so `request_completed` (info) is only emitted in debug mode.
-- **Logout does not revoke the access token.** It stays valid until it expires (15 minutes at most).
+- **Logout does not revoke the access token.** It stays valid until it expires (5 minutes at most).
 - **The published image is a dev image.** The `Dockerfile` starts uvicorn with `--reload`, and that is what CI pushes to GHCR.
