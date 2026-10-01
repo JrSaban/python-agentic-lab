@@ -51,9 +51,7 @@ class TodoRepository(BaseRepository[Todo]):
             query = query.where(Todo.owner_id == owner_id)
 
         if with_categories:
-            query = query.options(
-                selectinload(Todo.categories.and_(Category.deleted_at.is_(None)))
-            )
+            query = query.options(selectinload(Todo.categories.and_(Category.deleted_at.is_(None))))
 
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
