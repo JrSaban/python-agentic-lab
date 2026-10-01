@@ -1,5 +1,6 @@
 """Tests d'intégration de l'endpoint Auth."""
 
+import fakeredis
 from httpx import AsyncClient, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -133,6 +134,28 @@ async def test_refresh_with_rotated_token_still_works(client: AsyncClient) -> No
         "/api/v1/refresh", json={"refresh_token": new_refresh_token}
     )
     assert second_refresh_response.status_code == 200
+
+
+async def test_refresh_fails_once_absolute_session_lifetime_elapsed(
+    client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """Rotation alone keeps a session alive indefinitely while the user stays active;
+    the absolute session lifetime caps it regardless. Here we simulate it having
+    elapsed (deleting the session_start marker) rather than waiting out the real TTL —
+    the token being refreshed is otherwise perfectly valid and non-rotated."""
+    user_response = await register_user(client)
+    user_id = user_response.json()["id"]
+    user_email = user_response.json()["email"]
+
+    logged_in_response = await client.post(
+        "/api/v1/login", json={"email": user_email, "password": "password"}
+    )
+    refresh_token = logged_in_response.json()["refresh_token"]
+
+    await redis_client.delete(f"refresh_token:session_start:{user_id}")
+
+    response = await client.post("/api/v1/refresh", json={"refresh_token": refresh_token})
+    assert response.status_code == 401
 
 
 async def test_login_again_invalidates_previous_refresh_token(client: AsyncClient) -> None:
