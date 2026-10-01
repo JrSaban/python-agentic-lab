@@ -3,6 +3,8 @@ Repository Pattern pour l'accès aux données de Category.
 Encapsule les requêtes SQL (SQLAlchemy 2.0 select, add, delete).
 """
 
+from datetime import UTC
+from datetime import datetime
 from collections.abc import Sequence
 
 from sqlalchemy import Select, func, select
@@ -38,7 +40,9 @@ class CategoryRepository(BaseRepository[Category]):
         if not entity_ids:
             return []
 
-        query = select(Category).where(Category.id.in_(entity_ids))
+        query = select(Category).where(
+            Category.id.in_(entity_ids), Category.deleted_at.is_(None)
+        )
         result = await self.session.execute(query)
         return result.scalars().all()
 
@@ -61,6 +65,12 @@ class CategoryRepository(BaseRepository[Category]):
         await self.session.refresh(category)
         return category
 
+    async def delete(self, entity: Category) -> None:
+        """Soft delete the entity by setting the deleted_at field to the current time."""
+        entity.deleted_at = datetime.now(UTC)
+        self.session.add(entity)
+        await self.session.flush()
+
     async def count(self, name: str | None = None) -> int:
         """Compte le nombre de catégories."""
         query = select(func.count()).select_from(Category)
@@ -73,6 +83,8 @@ class CategoryRepository(BaseRepository[Category]):
         name: str | None = None,
     ) -> Select:
         """Helper qui applique les filtres sur une requête."""
-        return self._apply_filter_params(
+        query = self._apply_filter_params(
             query, [FilterParams(column=Category.name, value=name, op="ilike")]
         )
+        query = query.where(Category.deleted_at.is_(None))
+        return query
