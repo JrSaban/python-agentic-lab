@@ -1,8 +1,10 @@
 """Tests d'intégration des endpoints Todos."""
 
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.todos.models import Todo
 from src.modules.todos.repository import TodoRepository
 from src.modules.todos.schemas import TodoCreate
 from src.modules.users.models import User
@@ -496,3 +498,58 @@ async def test_delete_todo_of_another_user_as_admin_success(
     response = await authenticated_admin.delete(f"/api/v1/todos/{todo.id}")
     assert response.status_code == 204
     assert await TodoRepository(db_session).get_by_id(todo.id, owner_id=None) is None
+
+
+async def test_delete_todo_is_soft_delete(
+    authenticated_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Deleting a todo doesn't remove the row: the API treats it as gone (404), but
+    the row still exists directly in the database, with deleted_at set."""
+    todo = await authenticated_client.post("/api/v1/todos", json={"title": "Tâche 1"})
+    todo_id = todo.json()["id"]
+
+    response = await authenticated_client.delete(f"/api/v1/todos/{todo_id}")
+    assert response.status_code == 204
+
+    get_response = await authenticated_client.get(f"/api/v1/todos/{todo_id}")
+    assert get_response.status_code == 404
+
+    result = await db_session.execute(select(Todo).where(Todo.id == todo_id))
+    raw_todo = result.scalar_one()
+    assert raw_todo.deleted_at is not None
+
+
+async def test_deleted_todo_excluded_from_list(authenticated_client: AsyncClient) -> None:
+    """A soft-deleted todo no longer appears in GET /todos, and total reflects it."""
+    todo_1 = await authenticated_client.post("/api/v1/todos", json={"title": "Tâche 1"})
+    await authenticated_client.post("/api/v1/todos", json={"title": "Tâche 2"})
+
+    await authenticated_client.delete(f"/api/v1/todos/{todo_1.json()['id']}")
+
+    response = await authenticated_client.get("/api/v1/todos")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["title"] == "Tâche 2"
+
+
+async def test_deleted_todo_excluded_from_category_todos(
+    authenticated_client: AsyncClient,
+) -> None:
+    """A soft-deleted todo no longer appears in GET /categories/{id}/todos either — the
+    todos_categories association row survives the soft delete (no CASCADE triggers on
+    an UPDATE), but the filter still applies since this endpoint delegates to the same
+    TodoService.list_todos."""
+    cat = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    cat_id = cat.json()["id"]
+    todo = await authenticated_client.post(
+        "/api/v1/todos", json={"title": "Tâche 1", "category_ids": [cat_id]}
+    )
+
+    await authenticated_client.delete(f"/api/v1/todos/{todo.json()['id']}")
+
+    response = await authenticated_client.get(f"/api/v1/categories/{cat_id}/todos")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 0
+    assert data["items"] == []
