@@ -26,6 +26,13 @@ class CategoryRepository(BaseRepository[Category]):
 
         return await self.paginate(query, skip, limit)
 
+    async def get_by_id(self, entity_id: int) -> Category | None:
+        """Get model's entity by its ID"""
+        query = select(Category).where(Category.id == entity_id, Category.deleted_at.is_(None))
+
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
     async def get_by_ids(self, entity_ids: Sequence[int]) -> Sequence[Category]:
         """Récupère une liste de catégories par leurs identifiants."""
         if not entity_ids:
