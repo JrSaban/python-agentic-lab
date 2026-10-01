@@ -17,6 +17,9 @@ async def test_healthcheck(client: AsyncClient) -> None:
     assert "app" in data
 
 
+# --- create ---
+
+
 async def test_create_todo_success(
     authenticated_client: AsyncClient,
     current_user: User,
@@ -96,6 +99,9 @@ async def test_create_todo_ignore_invalid_category_ids(
     detail = await authenticated_client.get(f"/api/v1/todos/{todo_id}?include=categories")
     assert len(detail.json()["categories"]) == 1
     assert detail.json()["categories"] == [cat_1.json()]
+
+
+# --- list ---
 
 
 async def test_list_todos_returns_only_own_todos(
@@ -240,6 +246,9 @@ async def test_list_todos_filter_by_category_ids(
     assert len(data["items"]) == 3
 
 
+# --- get ---
+
+
 async def test_get_todo_by_id_success(
     authenticated_client: AsyncClient,
 ) -> None:
@@ -315,6 +324,9 @@ async def test_get_todo_with_include_categories(authenticated_client: AsyncClien
     assert "categories" in response.json()
     assert len(response.json()["categories"]) == 1
     assert response.json()["categories"][0]["id"] == cat_1.json()["id"]
+
+
+# --- update ---
 
 
 async def test_patch_todo_success(
@@ -441,6 +453,9 @@ async def test_update_todo_omits_category_ids_keeps_existing(
 
     detail = await authenticated_client.get(f"/api/v1/todos/{todo.json()['id']}?include=categories")
     assert detail.json()["categories"] == [cat_1.json(), cat_2.json()]
+
+
+# --- delete ---
 
 
 async def test_delete_todo_success(
