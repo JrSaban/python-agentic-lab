@@ -29,7 +29,7 @@ fix: catch IntegrityError on category create
 
 ## Pull requests
 
-- Fill in the PR template: why, changes, how to test.
+- Fill in the PR template: why, changes, notes.
 - Before opening a PR, make sure these pass:
 
   ```bash
@@ -38,4 +38,4 @@ fix: catch IntegrityError on category create
   uv run pytest
   ```
 
-- If the PR includes an Alembic migration, say so in the "How to test" section (`uv run alembic upgrade head`).
+- If the PR includes an Alembic migration, say so in the "Notes" section (`uv run alembic upgrade head`).

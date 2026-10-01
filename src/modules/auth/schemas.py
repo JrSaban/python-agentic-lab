@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class LoginRequest(BaseModel):
-    """Payload reçu lors d'un POST /auth/login."""
+    """Payload reçu lors d'un POST /login."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -21,7 +21,7 @@ class LoginRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    """Payload retourné lors d'un POST /auth/login."""
+    """Payload retourné lors d'un POST /login ou d'un POST /refresh."""
 
     access_token: str
     refresh_token: str
@@ -29,6 +29,6 @@ class TokenResponse(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    """Payload reçu lors d'un POST /auth/refresh."""
+    """Payload reçu lors d'un POST /refresh."""
 
     refresh_token: str = Field(..., description="Refresh token de l'utilisateur")

@@ -5,7 +5,7 @@ from redis.asyncio import Redis
 
 from src.core.config import settings
 
-"""Client Redis, utilisé comme cache (catégories) et, plus tard, comme store des refresh tokens."""
+"""Client Redis, utilisé comme cache (catégories) et comme store des refresh tokens."""
 
 redis_client: Redis = redis.asyncio.from_url(settings.REDIS_URL, decode_responses=True)
 
