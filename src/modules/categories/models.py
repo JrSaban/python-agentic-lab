@@ -39,7 +39,7 @@ class Category(Base):
 
     __table_args__ = (
         Index(
-            "uq_categories_name_lower",
+            "uq_partial_categories_name_lower",
             func.lower(name),
             unique=True,
             postgresql_where=deleted_at.is_(None),
