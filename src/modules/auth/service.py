@@ -1,6 +1,6 @@
 """Service Layer (Logique métier pour l'auth)."""
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
 
 from redis.asyncio import Redis
@@ -23,7 +23,7 @@ class AuthService:
         self.user_repository = user_repository
         self.redis_client = redis_client
 
-    def _redis_key(self, key: Literal["user", "token"], value: int | str) -> str:
+    def _redis_key(self, key: Literal["user", "token", "session_start"], value: int | str) -> str:
         return f"refresh_token:{key}:{value}"
 
     async def _store_or_replace_refresh_token(self, user_id: int, refresh_token: str) -> None:
@@ -62,6 +62,13 @@ class AuthService:
         access_token = create_access_token({"sub": str(user.id)})
         refresh_token = generate_refresh_token()
 
+        session_start_key = self._redis_key("session_start", user.id)
+        await self.redis_client.set(
+            session_start_key,
+            datetime.now(UTC).isoformat(),
+            ex=timedelta(days=settings.REFRESH_TOKEN_ABSOLUTE_MAX_DAYS),
+        )
+
         await self._store_or_replace_refresh_token(user.id, refresh_token)
 
         return TokenResponse(access_token=access_token, refresh_token=refresh_token)
@@ -74,6 +81,10 @@ class AuthService:
             await self.redis_client.getdel(self._redis_key("token", hashed_refresh_token)),
         )
         if user_id is None:
+            raise UnauthorizedError("Refresh token invalide ou expiré")
+
+        session_valid = await self.redis_client.get(self._redis_key("session_start", user_id))
+        if session_valid is None:
             raise UnauthorizedError("Refresh token invalide ou expiré")
 
         user = await self.user_repository.get_by_id(int(user_id))
@@ -91,6 +102,8 @@ class AuthService:
         """Logout a user."""
         user_key = self._redis_key("user", user.id)
         old_token = cast(str | None, await self.redis_client.getdel(user_key))
+
+        await self.redis_client.delete(self._redis_key("session_start", user.id))
 
         if old_token is not None:
             await self.redis_client.delete(self._redis_key("token", old_token))
