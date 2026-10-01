@@ -63,7 +63,7 @@ async def test_login_success(
     assert stored_keys == [
         "refresh_token:session_start:1",
         token_key(result.refresh_token),
-        "refresh_token:user:1"
+        "refresh_token:user:1",
     ]
     assert result.refresh_token not in str(mock_redis.set.call_args_list)
     mock_redis.delete.assert_not_called()
@@ -116,8 +116,9 @@ async def test_login_user_not_active_raises_unauthorized_error(
 async def test_login_sets_absolute_session_ttl(
     mock_verify_password, mock_create_access_token, auth_service, mock_user_repo, mock_redis, user
 ):
-    """login() sets session_start with the absolute-lifetime TTL (settings.REFRESH_TOKEN_ABSOLUTE_MAX_DAYS),
-    independent of the sliding REFRESH_TOKEN_EXPIRE_DAYS TTL used for the token/user keys."""
+    """login() sets session_start with the absolute-lifetime TTL
+    (settings.REFRESH_TOKEN_ABSOLUTE_MAX_DAYS), independent of the sliding
+    REFRESH_TOKEN_EXPIRE_DAYS TTL used for the token/user keys."""
     mock_user_repo.get_by_email.return_value = user
     mock_redis.set.return_value = None
 
