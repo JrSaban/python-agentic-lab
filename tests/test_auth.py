@@ -68,3 +68,73 @@ async def test_login_inactive_account_returns_401(
         "/api/v1/login", json={"email": "test@gmail.com", "password": "password"}
     )
     assert response.status_code == 401
+
+
+async def test_refresh_success(client: AsyncClient) -> None:
+    """A valid refresh token (POST /api/v1/refresh) → 200, a new access_token."""
+    user_response = await register_user(client)
+    user_email = user_response.json()["email"]
+    user_password = "password"
+
+    logged_in_response = await client.post(
+        "/api/v1/login", json={"email": user_email, "password": user_password}
+    )
+    refresh_token = logged_in_response.json()["refresh_token"]
+
+    response = await client.post("/api/v1/refresh", json={"refresh_token": refresh_token})
+    assert response.status_code == 200
+    assert "access_token" in response.json()
+
+
+async def test_refresh_invalid_token_returns_401(client: AsyncClient) -> None:
+    """A refresh token that was never issued (or already expired/revoked) → 401."""
+    response = await client.post("/api/v1/refresh", json={"refresh_token": "invalid_token"})
+    assert response.status_code == 401
+
+
+async def test_login_again_invalidates_previous_refresh_token(client: AsyncClient) -> None:
+    """Logging in a second time replaces the refresh token: trying to refresh with
+    the first (now-superseded) token → 401."""
+    user_response = await register_user(client)
+    user_email = user_response.json()["email"]
+    user_password = "password"
+
+    logged_in_response = await client.post(
+        "/api/v1/login", json={"email": user_email, "password": user_password}
+    )
+    old_refresh_token = logged_in_response.json()["refresh_token"]
+
+    # Login again
+    await client.post("/api/v1/login", json={"email": user_email, "password": user_password})
+
+    response = await client.post("/api/v1/refresh", json={"refresh_token": old_refresh_token})
+    assert response.status_code == 401
+
+
+async def test_logout_success(authenticated_client: AsyncClient) -> None:
+    """POST /api/v1/logout with a valid access token → 204."""
+    response = await authenticated_client.post("/api/v1/logout")
+    assert response.status_code == 204
+
+
+async def test_logout_revokes_refresh_token(authenticated_client: AsyncClient) -> None:
+    """After logout, the refresh token that was active for this session no longer
+    works (POST /api/v1/refresh with it → 401)."""
+    response = await authenticated_client.post(
+        "/api/v1/login", json={"email": "user@test.com", "password": "secret123"}
+    )
+    refresh_token = response.json()["refresh_token"]
+
+    response = await authenticated_client.post("/api/v1/logout")
+    assert response.status_code == 204
+
+    response = await authenticated_client.post(
+        "/api/v1/refresh", json={"refresh_token": refresh_token}
+    )
+    assert response.status_code == 401
+
+
+async def test_logout_without_token_returns_401(client: AsyncClient) -> None:
+    """POST /api/v1/logout with no Authorization header at all → 401."""
+    response = await client.post("/api/v1/logout")
+    assert response.status_code == 401

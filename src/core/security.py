@@ -1,5 +1,7 @@
 """Security utilities."""
 
+import hashlib
+import secrets
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -36,3 +38,13 @@ def create_access_token(data: dict) -> str:
 def decode_access_token(token: str) -> dict:
     """Decode a JWT access token and return its payload."""
     return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+
+
+def generate_refresh_token() -> str:
+    """Generate a refresh token."""
+    return secrets.token_urlsafe(32)
+
+
+def hash_refresh_token(refresh_token: str) -> str:
+    """Hash a plain text refresh token."""
+    return hashlib.sha256(refresh_token.encode()).hexdigest()
