@@ -29,7 +29,7 @@ class TodoRepository(BaseRepository[Todo]):
         category_ids: list[int] | None = None,
     ) -> Sequence[Todo]:
         """Récupère une liste paginée de tâches."""
-        query = select(Todo).order_by(Todo.id.desc())
+        query = select(Todo).where(Todo.deleted_at.is_(None)).order_by(Todo.id.desc())
         query = self._apply_filters(
             query,
             owner_id=owner_id,
@@ -44,7 +44,7 @@ class TodoRepository(BaseRepository[Todo]):
         self, entity_id: int, *, owner_id: int | None, with_categories: bool = False
     ) -> Todo | None:
         """Récupère une tâche par son identifiant unique."""
-        query = select(Todo).where(Todo.id == entity_id)
+        query = select(Todo).where(Todo.id == entity_id, Todo.deleted_at.is_(None))
 
         if owner_id is not None:
             query = query.where(Todo.owner_id == owner_id)
@@ -98,7 +98,7 @@ class TodoRepository(BaseRepository[Todo]):
         is_completed: bool | None = None,
         category_ids: list[int] | None = None,
     ) -> int:
-        query = select(func.count()).select_from(Todo)
+        query = select(func.count()).select_from(Todo).where(Todo.deleted_at.is_(None))
         query = self._apply_filters(
             query,
             owner_id=owner_id,
