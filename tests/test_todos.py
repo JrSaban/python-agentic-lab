@@ -103,6 +103,27 @@ async def test_create_todo_ignore_invalid_category_ids(
     assert detail.json()["categories"] == [cat_1.json()]
 
 
+async def test_create_todo_ignores_deleted_category_id(
+    authenticated_admin: AsyncClient,
+) -> None:
+    """A soft-deleted category id behaves like a nonexistent one: it's silently
+    excluded rather than attached (CategoryRepository.get_by_ids filters it out)."""
+    cat_1 = await authenticated_admin.post("/api/v1/categories", json={"name": "Catégorie 1"})
+    cat_1_id = cat_1.json()["id"]
+    await authenticated_admin.delete(f"/api/v1/categories/{cat_1_id}")
+
+    payload = {
+        "title": "Tâche avec catégorie supprimée",
+        "category_ids": [cat_1_id],
+    }
+
+    response = await authenticated_admin.post("/api/v1/todos", json=payload)
+    todo_id = response.json()["id"]
+
+    detail = await authenticated_admin.get(f"/api/v1/todos/{todo_id}?include=categories")
+    assert detail.json()["categories"] == []
+
+
 # --- list ---
 
 
