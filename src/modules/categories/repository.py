@@ -3,9 +3,8 @@ Repository Pattern pour l'accès aux données de Category.
 Encapsule les requêtes SQL (SQLAlchemy 2.0 select, add, delete).
 """
 
-from datetime import UTC
-from datetime import datetime
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,9 +39,7 @@ class CategoryRepository(BaseRepository[Category]):
         if not entity_ids:
             return []
 
-        query = select(Category).where(
-            Category.id.in_(entity_ids), Category.deleted_at.is_(None)
-        )
+        query = select(Category).where(Category.id.in_(entity_ids), Category.deleted_at.is_(None))
         result = await self.session.execute(query)
         return result.scalars().all()
 
