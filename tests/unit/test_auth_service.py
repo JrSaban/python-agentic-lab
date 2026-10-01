@@ -58,7 +58,11 @@ async def test_login_success(
     mock_user_repo.update_last_login_date.assert_called_once_with(user)
 
     stored_keys = [c.args[0] for c in mock_redis.set.call_args_list]
-    assert stored_keys == [token_key(result.refresh_token), "refresh_token:user:1"]
+    assert stored_keys == [
+        "refresh_token:session_start:1",
+        token_key(result.refresh_token),
+        "refresh_token:user:1"
+    ]
     assert result.refresh_token not in str(mock_redis.set.call_args_list)
     mock_redis.delete.assert_not_called()
 
@@ -118,10 +122,11 @@ async def test_login_replaces_existing_refresh_token(
 
     result = await auth_service.login(LOGIN_REQUEST)
 
-    first_set, second_set = mock_redis.set.call_args_list
-    assert first_set.args[0] == token_key(result.refresh_token)
-    assert second_set.args[0] == "refresh_token:user:1"
-    assert second_set.kwargs["get"] is True
+    first_set, second_set, third_set = mock_redis.set.call_args_list
+    assert first_set.args[0] == "refresh_token:session_start:1"
+    assert second_set.args[0] == token_key(result.refresh_token)
+    assert third_set.args[0] == "refresh_token:user:1"
+    assert third_set.kwargs["get"] is True
     mock_redis.delete.assert_called_once_with("refresh_token:token:old_hash")
 
 
@@ -207,7 +212,8 @@ async def test_logout_deletes_refresh_token(auth_service, mock_redis, user):
     await auth_service.logout(user)
 
     mock_redis.getdel.assert_called_once_with("refresh_token:user:1")
-    mock_redis.delete.assert_called_once_with("refresh_token:token:stored_hash")
+    mock_redis.delete.assert_any_call("refresh_token:session_start:1")
+    mock_redis.delete.assert_any_call("refresh_token:token:stored_hash")
 
 
 async def test_logout_without_existing_refresh_token_does_nothing(auth_service, mock_redis, user):
@@ -218,4 +224,4 @@ async def test_logout_without_existing_refresh_token_does_nothing(auth_service, 
     await auth_service.logout(user)
 
     mock_redis.getdel.assert_called_once_with("refresh_token:user:1")
-    mock_redis.delete.assert_not_called()
+    mock_redis.delete.assert_called_once_with("refresh_token:session_start:1")
