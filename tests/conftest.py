@@ -1,6 +1,7 @@
 import os
 from collections.abc import AsyncGenerator
 
+import fakeredis
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -18,6 +19,7 @@ os.environ.setdefault("DEBUG", "False")
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-not-for-production-123456789012"
 
 from src.core.database import Base, get_db_session  # noqa: E402
+from src.core.redis import get_redis_client  # noqa: E402
 from src.core.security import hash_password  # noqa: E402
 from src.main import app  # noqa: E402
 from src.modules.auth.router import get_current_user  # noqa: E402
@@ -67,7 +69,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest.fixture
-async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+async def client(
+    db_session: AsyncSession, redis_client: fakeredis.FakeAsyncRedis
+) -> AsyncGenerator[AsyncClient, None]:
     """
     Client HTTP asynchrone (httpx.AsyncClient).
     Interroge l'application FastAPI en mémoire (sans ouvrir de vrai port réseau).
@@ -77,8 +81,12 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     async def override_get_db_session() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
-    # Surcharge la dépendance de FastAPI
+    async def override_get_redis_client() -> AsyncGenerator[fakeredis.FakeAsyncRedis, None]:
+        yield redis_client
+
+    # Surcharge les dépendances de FastAPI
     app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_redis_client] = override_get_redis_client
 
     # Crée le client de test
     transport = ASGITransport(app=app)
@@ -152,3 +160,10 @@ async def authenticated_admin(client: AsyncClient, current_admin_user: User) -> 
     """Le client de test, mais avec get_current_user déjà surchargé par current_admin_user."""
     app.dependency_overrides[get_current_user] = lambda: current_admin_user
     return client
+
+
+@pytest.fixture
+async def redis_client() -> AsyncGenerator[fakeredis.FakeAsyncRedis, None]:
+    """Fixture pour un client Redis mocké (fakeredis)"""
+    client = fakeredis.FakeAsyncRedis(decode_responses=True)
+    yield client

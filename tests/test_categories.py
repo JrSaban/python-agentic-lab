@@ -1,14 +1,16 @@
 """Tests d'intégration des endpoints Categories."""
 
 import asyncio
+import json
 
+import fakeredis
 from httpx import AsyncClient
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
-from src.modules.categories.schemas import CategoryCreate
+from src.modules.categories.schemas import CategoryCreate, CategoryUpdate
 from src.modules.categories.service import CategoryService
 from src.modules.todos.repository import TodoRepository
 from src.modules.todos.schemas import TodoCreate
@@ -193,6 +195,73 @@ async def test_delete_category_removes_association_but_keeps_todo(
     assert get_todo.json()["categories"] == []
 
 
+async def test_get_category_stores_it_in_cache(
+    authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """The first GET /categories/{id} stores the category in Redis."""
+    create_res = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    category_id = create_res.json()["id"]
+    assert await redis_client.get(f"category:{category_id}") is None
+
+    response = await authenticated_client.get(f"/api/v1/categories/{category_id}")
+    assert response.status_code == 200
+
+    cached = await redis_client.get(f"category:{category_id}")
+    assert cached is not None
+    assert json.loads(cached) == response.json()
+
+
+async def test_get_category_is_served_from_cache(
+    authenticated_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Once cached, GET /categories/{id} no longer reads the database: a change made
+    directly in the database (bypassing the service, so no invalidation) isn't seen."""
+    create_res = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    category_id = create_res.json()["id"]
+    await authenticated_client.get(f"/api/v1/categories/{category_id}")
+
+    # Modification directe en base, sans passer par le service
+    repository = CategoryRepository(db_session)
+    category = await repository.get_by_id(category_id)
+    assert category is not None
+    await repository.update(category, CategoryUpdate(name="House"))
+
+    response = await authenticated_client.get(f"/api/v1/categories/{category_id}")
+    assert response.status_code == 200
+    assert response.json()["name"] == "Sport"
+
+
+async def test_patch_category_invalidates_cache(
+    authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """PATCH /categories/{id} removes the cached entry, so the next GET returns fresh data."""
+    create_res = await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    category_id = create_res.json()["id"]
+    await authenticated_client.get(f"/api/v1/categories/{category_id}")
+
+    await authenticated_client.patch(f"/api/v1/categories/{category_id}", json={"name": "House"})
+    assert await redis_client.get(f"category:{category_id}") is None
+
+    response = await authenticated_client.get(f"/api/v1/categories/{category_id}")
+    assert response.json()["name"] == "House"
+
+
+async def test_delete_category_invalidates_cache(
+    authenticated_admin: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """DELETE /categories/{id} removes the cached entry, so the next GET returns 404."""
+    create_res = await authenticated_admin.post("/api/v1/categories", json={"name": "Sport"})
+    category_id = create_res.json()["id"]
+    await authenticated_admin.get(f"/api/v1/categories/{category_id}")
+
+    del_res = await authenticated_admin.delete(f"/api/v1/categories/{category_id}")
+    assert del_res.status_code == 204
+    assert await redis_client.get(f"category:{category_id}") is None
+
+    get_res = await authenticated_admin.get(f"/api/v1/categories/{category_id}")
+    assert get_res.status_code == 404
+
+
 async def test_list_categories_without_token_returns_401(client: AsyncClient) -> None:
     """GET /categories with no Authorization header at all → 401."""
     response = await client.get("/api/v1/categories")
@@ -218,7 +287,9 @@ async def test_create_category_duplicate_name_returns_409(
     assert response.json()["detail"] == "Une catégorie avec le nom Sport existe déjà."
 
 
-async def test_create_category_concurrent_same_name_no_duplicate() -> None:
+async def test_create_category_concurrent_same_name_no_duplicate(
+    redis_client: fakeredis.FakeAsyncRedis,
+) -> None:
     """Two concurrent requests creating a category with the same name must not both
     succeed. The database's unique constraint on `Category.name` is the real guard,
     and `create_category` must translate the resulting IntegrityError into a clean
@@ -237,7 +308,7 @@ async def test_create_category_concurrent_same_name_no_duplicate() -> None:
 
             repository.create = create_serialized
 
-            service = CategoryService(repository)
+            service = CategoryService(repository, redis_client)
             try:
                 category = await service.create_category(
                     created_by_id=1, data=CategoryCreate(name=name)

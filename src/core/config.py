@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "todo_db"
 
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+
     # JWT
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"

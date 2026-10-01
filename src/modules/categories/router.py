@@ -5,9 +5,11 @@ Routing & Controller Layer pour le domaine Categories.
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_session
+from src.core.redis import get_redis_client
 from src.core.schemas import PaginatedResponse
 from src.modules.auth.router import CurrentUserDep
 from src.modules.categories.models import Category
@@ -23,9 +25,10 @@ router = APIRouter(prefix="/categories", tags=["Categories"])
 # Factory de dépendance : instancie Repository et Service injectés par requête
 def get_category_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    redis_client: Annotated[Redis, Depends(get_redis_client)],
 ) -> CategoryService:
     repository = CategoryRepository(session)
-    return CategoryService(repository)
+    return CategoryService(repository, redis_client)
 
 
 # Type alias pour injection propre et lisible (standard Python moderne)
@@ -74,8 +77,8 @@ async def get_category(
     service: CategoryServiceDep,
     current_user: CurrentUserDep,
     category_id: int,
-) -> Category:
-    return await service.get_category_or_404(category_id)
+) -> CategoryResponse:
+    return await service.get_category_cached(category_id)
 
 
 @router.get(
