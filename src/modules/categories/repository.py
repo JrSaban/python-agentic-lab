@@ -46,12 +46,6 @@ class CategoryRepository(BaseRepository[Category]):
         result = await self.session.execute(query)
         return result.scalars().all()
 
-    async def get_by_name(self, name: str) -> Category | None:
-        """Récupère une catégorie par son nom."""
-        query = select(Category).where(func.lower(Category.name) == func.lower(name))
-        result = await self.session.execute(query)
-        return result.scalar_one_or_none()
-
     async def create(self, created_by_id: int, data: CategoryCreate) -> Category:
         """Crée et persiste une nouvelle catégorie."""
         category = Category(
