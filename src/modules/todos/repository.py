@@ -3,6 +3,8 @@ Repository Pattern pour l'accès aux données de Todo.
 Encapsule les requêtes SQL (SQLAlchemy 2.0 select, add, delete).
 """
 
+from datetime import datetime
+from datetime import UTC
 from collections.abc import Sequence
 
 from sqlalchemy import Select, func, select
@@ -87,7 +89,7 @@ class TodoRepository(BaseRepository[Todo]):
 
     async def delete(self, entity: Todo) -> None:
         """Soft delete the entity by setting the deleted_at field to the current time."""
-        entity.deleted_at = func.now()
+        entity.deleted_at = datetime.now(UTC)
         self.session.add(entity)
         await self.session.flush()
 
