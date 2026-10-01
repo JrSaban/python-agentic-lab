@@ -85,6 +85,12 @@ class TodoRepository(BaseRepository[Todo]):
         await self.session.refresh(todo)
         return todo
 
+    async def delete(self, entity: Todo) -> None:
+        """Soft delete the entity by setting the deleted_at field to the current time."""
+        entity.deleted_at = func.now()
+        self.session.add(entity)
+        await self.session.flush()
+
     async def count(
         self,
         owner_id: int | None = None,
