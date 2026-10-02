@@ -5,6 +5,9 @@ from httpx import AsyncClient
 from src.modules.users.models import User
 
 
+# --- create_user ---
+
+
 async def test_create_user_success(client: AsyncClient) -> None:
     """Successful registration (POST /api/v1/users) → 201, no password in the response."""
     payload = {
@@ -104,6 +107,9 @@ async def test_create_user_missing_fields_returns_422(client: AsyncClient) -> No
     assert response.status_code == 422
 
 
+# --- list_users ---
+
+
 async def test_list_users_as_admin_success(authenticated_admin: AsyncClient) -> None:
     """An admin can list users (GET /api/v1/users) → 200, paginated response."""
     response = await authenticated_admin.get("/api/v1/users")
@@ -114,6 +120,9 @@ async def test_list_users_as_regular_user_returns_403(authenticated_client: Asyn
     """A regular user cannot list users → 403."""
     response = await authenticated_client.get("/api/v1/users")
     assert response.status_code == 403
+
+
+# --- get_user_or_404 (get_me / get_user) ---
 
 
 async def test_get_me_with_real_token(client: AsyncClient) -> None:
@@ -185,17 +194,20 @@ async def test_get_user_not_found_as_admin_returns_404(authenticated_admin: Asyn
     assert response.status_code == 404
 
 
+# --- update_user ---
+
+
 async def test_update_user_self_success(
     authenticated_client: AsyncClient, current_user: User
 ) -> None:
-    """A user can update their own profile (PATCH /api/v1/users/{id}) → 200."""
-    assert current_user.email == "user@test.com"
+    """A user can update their own profile (PATCH /api/v1/users/{id}) → 200. Email
+    isn't part of this payload anymore (see the update_email section below)."""
     response = await authenticated_client.patch(
-        f"/api/v1/users/{current_user.id}", json={"email": "test@gmail.com"}
+        f"/api/v1/users/{current_user.id}", json={"first_name": "Jeanne"}
     )
     assert response.status_code == 200
     assert response.json()["id"] == current_user.id
-    assert response.json()["email"] == "test@gmail.com"
+    assert response.json()["first_name"] == "Jeanne"
 
 
 async def test_update_user_other_as_regular_user_returns_403(
@@ -203,9 +215,72 @@ async def test_update_user_other_as_regular_user_returns_403(
 ) -> None:
     """A regular user cannot update another user's profile → 403."""
     response = await authenticated_client.patch(
-        f"/api/v1/users/{current_admin_user.id}", json={"email": "test@gmail.com"}
+        f"/api/v1/users/{current_admin_user.id}", json={"first_name": "Jeanne"}
     )
     assert response.status_code == 403
+
+
+# --- update_email ---
+
+
+async def test_update_email_success(
+    authenticated_client: AsyncClient, current_user: User
+) -> None:
+    """Successful self-service email change (PATCH /api/v1/users/me/email) → 200."""
+    response = await authenticated_client.patch(
+        "/api/v1/users/me/email",
+        json={"new_email": "new@test.com", "current_password": "secret123"},
+    )
+    assert response.status_code == 200
+    assert response.json()["id"] == current_user.id
+    assert response.json()["email"] == "new@test.com"
+
+
+async def test_update_email_wrong_password_returns_403(
+    authenticated_client: AsyncClient,
+) -> None:
+    """Email change with an incorrect current password → 403."""
+    response = await authenticated_client.patch(
+        "/api/v1/users/me/email",
+        json={"new_email": "new@test.com", "current_password": "wrong_password"},
+    )
+    assert response.status_code == 403
+
+
+async def test_update_email_duplicate_returns_409(
+    authenticated_client: AsyncClient, other_user: User
+) -> None:
+    """Changing your email to one already taken by another user → 409."""
+    response = await authenticated_client.patch(
+        "/api/v1/users/me/email",
+        json={"new_email": other_user.email, "current_password": "secret123"},
+    )
+    assert response.status_code == 409
+
+
+async def test_update_email_revokes_refresh_token(
+    authenticated_client: AsyncClient, current_user: User
+) -> None:
+    """Changing your email revokes your current refresh token, same mechanism as
+    a password change or logout."""
+    login_response = await authenticated_client.post(
+        "/api/v1/login", json={"email": current_user.email, "password": "secret123"}
+    )
+    refresh_token = login_response.json()["refresh_token"]
+
+    response = await authenticated_client.patch(
+        "/api/v1/users/me/email",
+        json={"new_email": "new@test.com", "current_password": "secret123"},
+    )
+    assert response.status_code == 200
+
+    refresh_response = await authenticated_client.post(
+        "/api/v1/refresh", json={"refresh_token": refresh_token}
+    )
+    assert refresh_response.status_code == 401
+
+
+# --- update_password ---
 
 
 async def test_update_password_success(
@@ -300,6 +375,66 @@ async def test_update_password_failure_does_not_revoke_refresh_token(
     assert refresh_response.status_code == 200
 
 
+# --- set_user_email ---
+
+
+async def test_set_user_email_by_admin_success(
+    authenticated_admin: AsyncClient, other_user: User
+) -> None:
+    """An admin can change another user's email (PATCH /users/{id}/email) → 200."""
+    response = await authenticated_admin.patch(
+        f"/api/v1/users/{other_user.id}/email", json={"new_email": "new@test.com"}
+    )
+    assert response.status_code == 200
+    assert response.json()["id"] == other_user.id
+    assert response.json()["email"] == "new@test.com"
+
+
+async def test_set_user_email_by_non_admin_returns_403(
+    authenticated_client: AsyncClient, other_user: User
+) -> None:
+    """A non-admin can't change another user's email → 403."""
+    response = await authenticated_client.patch(
+        f"/api/v1/users/{other_user.id}/email", json={"new_email": "new@test.com"}
+    )
+    assert response.status_code == 403
+
+
+async def test_set_user_email_on_own_id_returns_403(
+    authenticated_admin: AsyncClient, current_admin_user: User
+) -> None:
+    """An admin can't use this admin-only route on their own id — they must go
+    through /me/email with their password instead."""
+    response = await authenticated_admin.patch(
+        f"/api/v1/users/{current_admin_user.id}/email", json={"new_email": "new@test.com"}
+    )
+    assert response.status_code == 403
+
+
+async def test_set_user_email_revokes_target_refresh_token(
+    authenticated_admin: AsyncClient, other_user: User
+) -> None:
+    """An admin changing someone else's email revokes THAT user's session, not
+    the admin's own."""
+    login_response = await authenticated_admin.post(
+        "/api/v1/login", json={"email": other_user.email, "password": "secret123"}
+    )
+    other_user_refresh_token = login_response.json()["refresh_token"]
+
+    response = await authenticated_admin.patch(
+        f"/api/v1/users/{other_user.id}/email", json={"new_email": "new@test.com"}
+    )
+    assert response.status_code == 200
+
+    refresh_response = await authenticated_admin.post(
+        "/api/v1/refresh", json={"refresh_token": other_user_refresh_token}
+    )
+    assert refresh_response.status_code == 401
+
+
+# --- set_user_active ---
+
+
 async def test_set_user_active_as_admin_success(
     authenticated_admin: AsyncClient, current_user: User
 ) -> None:
@@ -330,6 +465,9 @@ async def test_set_user_active_last_admin_returns_403(
         f"/api/v1/users/{current_admin_user.id}/active", json={"is_active": False}
     )
     assert response.status_code == 403
+
+
+# --- set_user_admin ---
 
 
 async def test_set_user_admin_as_admin_success(
