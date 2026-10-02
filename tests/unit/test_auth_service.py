@@ -7,7 +7,7 @@ import pytest
 from src.core.config import settings
 from src.core.exceptions import UnauthorizedError
 from src.modules.auth.schemas import LoginRequest
-from src.modules.auth.service import AuthService
+from src.modules.auth.service import _DUMMY_PASSWORD_HASH, AuthService
 from src.modules.users.models import User
 
 LOGIN_REQUEST = LoginRequest(email="test@gmail.com", password="password")
@@ -83,7 +83,7 @@ async def test_login_wrong_password_raises_unauthorized_error(
     mock_redis.set.assert_not_called()
 
 
-@patch("src.modules.auth.service.verify_password")
+@patch("src.modules.auth.service.verify_password", return_value=False)
 async def test_login_user_not_found_raises_unauthorized_error(
     mock_verify_password, auth_service, mock_user_repo, mock_redis
 ):
@@ -92,7 +92,7 @@ async def test_login_user_not_found_raises_unauthorized_error(
     with pytest.raises(UnauthorizedError):
         await auth_service.login(LOGIN_REQUEST)
 
-    mock_verify_password.assert_called_once_with(LOGIN_REQUEST.password, "dummy_password_hash")
+    mock_verify_password.assert_called_once_with(LOGIN_REQUEST.password, _DUMMY_PASSWORD_HASH)
     mock_user_repo.update_last_login_date.assert_not_called()
     mock_redis.set.assert_not_called()
 
