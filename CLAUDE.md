@@ -11,7 +11,7 @@ Language conventions, all deliberate:
 - Docstrings, code comments, and API error messages (`detail`) are in **French**. Several docstrings carry a Laravel analogy ("Équivalent conceptuel de ... dans Laravel") — keep them, and add one when a new cross-cutting piece has an obvious Laravel counterpart.
 - Test docstrings, `CLAUDE.md`, `README.md` and `CONTRIBUTING.md` are in English.
 
-Branch names, commit messages and PR rules live in `CONTRIBUTING.md`; the PR template is `.github/pull_request_template.md` (Why / Changes / Notes).
+Branch names, commit messages and PR rules live in `CONTRIBUTING.md`; the PR template is `.github/pull_request_template.md` (Why / Changes / Notes). Planned work is in `ROADMAP.md`: an item is removed from it in the same PR that finishes it.
 
 ## Commands
 
@@ -98,7 +98,7 @@ Services return ORM models and the router serializes them through `response_mode
 
 ### Generic repository layer
 
-`BaseRepository[ModelT: Base]` provides `get_by_id`, `update`, `delete`, `paginate` and `count_query` — the parts that are genuinely identical across resources. Its `get_by_id` and `delete` know nothing about soft deletes (`delete` is a real `DELETE`): `TodoRepository` and `CategoryRepository` override both, see "Soft deletes" below. Only `UserRepository` still uses the base `get_by_id`, and nothing calls the base `delete` today.
+`BaseRepository[ModelT: Base]` provides `get_by_id`, `update`, `delete`, `paginate` and `count_query` — the parts that are genuinely identical across resources. Its `get_by_id` and `delete` know nothing about soft deletes (`delete` is a real `DELETE`); `TodoRepository` and `CategoryRepository` override both.
 
 `TodoRepository` keeps its own `get_by_id`/`update` (`# pyrefly: ignore[bad-override]`), because `owner_id`/`categories` are required parameters the shared signature can't express without weakening the "no default" guarantee described under Ownership. This divergence is deliberate, not a gap to unify.
 
@@ -117,26 +117,11 @@ Consequences to keep in mind:
 
 ### Soft deletes
 
-`Todo` and `Category` carry a nullable `deleted_at`; their repositories override `delete()` to set it instead of removing the row. `User` has no soft delete and no delete endpoint at all — an account is switched off through `is_active`.
+`Todo` and `Category` carry a nullable `deleted_at`; their repositories override `delete()` to set it instead of removing the row. `User` has no soft delete and no delete endpoint — an account is switched off through `is_active`.
 
-There is **no global scope**, unlike Laravel's `SoftDeletes` trait: every query filters `deleted_at IS NULL` by hand. Any new query on these two models must do the same. The filter currently lives in:
+There is **no global scope**, unlike Laravel's `SoftDeletes` trait: every query on these two models filters `deleted_at IS NULL` by hand, and a new query must do the same. That includes queries going *through* the relationship (`selectinload`, `.any()`): a soft delete leaves the `todos_categories` rows in place, so the other side has to be filtered too.
 
-- each repository's `_apply_filters`, which covers `get_all` and `count` together;
-- `TodoRepository.get_by_id` and `CategoryRepository.get_by_id` (the latter overrides the base method for this reason only);
-- `CategoryRepository.get_by_ids`, used by `TodoService` to resolve `category_ids`;
-- the eager load behind `?include=categories`: `selectinload(Todo.categories.and_(Category.deleted_at.is_(None)))`.
-
-That last one exists because a soft delete leaves the `todos_categories` rows in place — the `ON DELETE CASCADE` on the association table never fires anymore. A relationship load without the extra condition returns deleted rows.
-
-What it means at the API level:
-
-- A deleted row behaves exactly like a missing one, for admins too: `GET`/`PATCH`/`DELETE` return 404 (so does a second `DELETE`), and it disappears from lists and totals. This follows from the filter sitting in the repository, the same way todo ownership does.
-- There is no restore endpoint and no way to list deleted rows through the API.
-- A soft-deleted category ID sent in a todo's `category_ids` is silently dropped, like an unknown ID.
-- `deleted_at` is set in Python (`datetime.now(UTC)`), not with `func.now()`, so the instance holds a real datetime right after the flush.
-- `delete_category` still invalidates the cache; nothing about soft deletes changes the cache rules.
-
-Tests prove a delete is soft by selecting the row straight from `db_session` after the API returned 404 (`test_delete_todo_is_soft_delete`, `test_delete_category_is_soft_delete`).
+A deleted row behaves exactly like a missing one, for admins as well: 404 on `GET`/`PATCH`/`DELETE`, absent from lists and totals, silently dropped when its ID is sent in a todo's `category_ids`. There is no restore endpoint and no way to list deleted rows.
 
 ### Authentication
 
