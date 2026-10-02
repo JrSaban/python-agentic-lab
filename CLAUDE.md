@@ -205,7 +205,7 @@ So `categories/schemas.py` must never import from `todos/schemas.py`, and `todos
 
 `GET /todos/{id}` takes an `include` query param and declares `response_model=TodoResponse | TodoDetailResponse`; the handler builds the right one explicitly with `.model_validate(...)`, since FastAPI can't choose a union member itself. The repository method takes a matching `with_<relation>: bool = False` flag that adds a `selectinload`.
 
-List endpoints return `PaginatedResponse[T]`: the service returns `(items, total)` and the router builds the envelope. Multi-value filters on a many-to-many field (`category_ids`) use OR semantics. Free-text filters use `ilike` with `Query(min_length=2)` so a one-character search can't match everything.
+List endpoints return `PaginatedResponse[T]`: the service returns `(items, total)` and the router builds the envelope. Multi-value filters on a many-to-many field (`category_ids`) use OR semantics. Free-text filters use `ilike` with `Query(min_length=2)` so a one-character search can't match everything, and escape `%`/`_` (`BaseRepository.escape_ilike_value`) so a literal one in the search term isn't read as a SQL wildcard.
 
 ### Logging and request IDs
 
