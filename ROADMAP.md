@@ -18,6 +18,9 @@ lives in the README's Features section and in `CLAUDE.md`, not here.
    - `fix/revoke-sessions-on-password-change` — `PATCH /users/me/password` revokes the user's
      refresh token, forcing a new login. The revocation becomes a reusable `AuthService` method
      (shared with `logout`), called from the `users` router.
+   - `fix/constant-time-login` — `POST /login` runs Argon2 against a dummy hash when the email
+     is unknown, so the response time no longer reveals whether an account exists. `POST /users`
+     still answers 409 for a taken email; that part stays a known limitation.
    - `feat/email-change-requires-password` — email leaves `UserUpdate`. A user changes their own
      through `PATCH /users/me/email`, which asks for the current password; an admin changes
      someone else's through `PATCH /users/{id}/email`, without a password, and gets a 403 on
