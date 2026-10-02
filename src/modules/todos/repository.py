@@ -5,6 +5,7 @@ Encapsule les requêtes SQL (SQLAlchemy 2.0 select, add, delete).
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from sqlalchemy import and_
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -131,7 +132,10 @@ class TodoRepository(BaseRepository[Todo]):
         if category_ids is not None:
             query = query.where(
                 Todo.categories.any(
-                    Category.id.in_(category_ids).and_(Category.deleted_at.is_(None))
+                    and_(
+                        Category.id.in_(category_ids),
+                        Category.deleted_at.is_(None),
+                    )
                 )
             )
 
