@@ -14,8 +14,10 @@ from src.modules.users.schemas import (
     UserActiveStatusUpdate,
     UserAdminStatusUpdate,
     UserCreate,
+    UserEmailUpdate,
     UserPasswordUpdate,
     UserResponse,
+    UserSelfEmailUpdate,
     UserUpdate,
 )
 from src.modules.users.service import UserService
@@ -130,10 +132,36 @@ async def update_user(
 
 
 @router.patch(
+    "/me/email",
+    response_model=UserResponse,
+    summary="Changer l'email de l'utilisateur connecté",
+    description="""
+        Changer l'email de l'utilisateur connecté.
+        Toutes les sessions de l'utilisateur seront révoquées.
+    """,
+)
+async def update_email(
+    service: UserServiceDep,
+    auth_service: AuthServiceDep,
+    current_user: CurrentUserDep,
+    data: UserSelfEmailUpdate,
+) -> User:
+    user = await service.update_email(
+        current_user=current_user,
+        data=data,
+    )
+    await auth_service.revoke_session(current_user)
+    return user
+
+
+@router.patch(
     "/me/password",
     response_model=UserResponse,
     summary="Changer le mot de passe de l'utilisateur connecté",
-    description="Change le mot de passe de l'utilisateur connecté.",
+    description="""
+        Changer le mot de passe de l'utilisateur connecté.
+        Toutes les sessions de l'utilisateur seront révoquées.
+    """,
 )
 async def update_password(
     service: UserServiceDep,
@@ -145,6 +173,28 @@ async def update_password(
         current_user=current_user,
         data=data,
     )
+    await auth_service.revoke_session(current_user)
+    return user
+
+
+@router.patch(
+    "/{user_id}/email",
+    response_model=UserResponse,
+    summary="Changer l'email d'un utilisateur",
+    description="""
+        Changer l'email d'un utilisateur par son ID.
+        Seul l'utilisateur concerné ou un admin peut modifier son email.
+        Toutes les sessions de l'utilisateur seront révoquées.
+    """,
+)
+async def set_user_email(
+    service: UserServiceDep,
+    auth_service: AuthServiceDep,
+    current_user: CurrentUserDep,
+    user_id: int,
+    data: UserEmailUpdate,
+) -> User:
+    user = await service.set_user_email(current_user=current_user, entity_id=user_id, data=data)
     await auth_service.revoke_session(user)
     return user
 

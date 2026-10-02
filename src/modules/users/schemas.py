@@ -64,7 +64,6 @@ class UserSelfEmailUpdate(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    old_email: EmailStr = Field(..., max_length=255, description="Ancien email de l'utilisateur")
     new_email: EmailStr = Field(..., max_length=255, description="Nouvel email de l'utilisateur")
     current_password: str = Field(
         ..., min_length=6, max_length=255, description="Mot de passe actuel de l'utilisateur"
@@ -72,10 +71,8 @@ class UserSelfEmailUpdate(BaseModel):
 
     @field_validator("new_email")
     @classmethod
-    def new_email_not_equal_old_email(cls, value: str, info) -> str:
-        """Checks that the new email is different from the old email."""
-        if value == info.data["old_email"]:
-            raise ValueError("Le nouvel email doit être différent de l'ancien.")
+    def lower_case_email(cls, value: str) -> str:
+        """Converts the email to lowercase."""
         return value.lower()
 
 
