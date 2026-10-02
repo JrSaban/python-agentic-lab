@@ -38,6 +38,15 @@ class CategoryService:
         filtered_key = {k: v for k, v in keys.items() if v is not None}
         return f"categories:list:{gen}:{hash_redis_key(json.dumps(filtered_key, sort_keys=True))}"
 
+    async def _fetch_from_db(
+        self, skip: int, limit: int, name: str | None
+    ) -> tuple[Sequence[CategoryResponse], int]:
+        categories = await self.repository.get_all(skip=skip, limit=limit, name=name)
+        categories_resp = [CategoryResponse.model_validate(cat) for cat in categories]
+        total = await self.repository.count(name=name)
+
+        return (categories_resp, total)
+
     async def _invalidate_cache(self, *, key: int | None = None) -> None:
         """Invalidate cache."""
         try:
@@ -52,55 +61,52 @@ class CategoryService:
         self, skip: int = 0, limit: int = 100, name: str | None = None
     ) -> tuple[Sequence[CategoryResponse], int]:
         """Fetch all categories with pagination."""
-        redis_key = None
+        if name is not None:
+            return await self._fetch_from_db(skip, limit, name)
 
-        if name is None:
-            try:
-                gen = cast(str | None, await self.redis_client.get("categories:list:gen"))
-            except RedisError:
-                gen = 0
+        try:
+            gen = cast(str | None, await self.redis_client.get("categories:list:gen"))
+        except RedisError:
+            gen = 0
 
-            redis_key = self._redis_key_categories_list(
-                gen=int(gen) if gen else 0,
-                keys={"skip": skip, "limit": limit, "name": name},
+        redis_key = self._redis_key_categories_list(
+            gen=int(gen) if gen else 0,
+            keys={"skip": skip, "limit": limit},
+        )
+
+        try:
+            cached_response = await self.redis_client.get(redis_key)
+
+            if cached_response:
+                # Parse la réponse JSON en objet Python
+                response_data = json.loads(cached_response)
+
+                # Convertis les listes d'objets en Pydantic model
+                categories = [
+                    CategoryResponse.model_validate(cat) for cat in response_data["categories"]
+                ]
+
+                return (categories, int(response_data["total"]))
+        except RedisError:
+            logger.warning("redis_unavailable", operation="get_list_categories", exc_info=True)
+        except (KeyError, TypeError, ValueError):
+            logger.warning("cache_corrupted", operation="get_list_categories", exc_info=True)
+
+        categories_resp, total = await self._fetch_from_db(skip, limit, name)
+
+        try:
+            await self.redis_client.set(
+                redis_key,
+                json.dumps(
+                    {
+                        "categories": [cat.model_dump(mode="json") for cat in categories_resp],
+                        "total": total,
+                    }
+                ),
+                ex=REDIS_TTL,
             )
-
-            try:
-                cached_response = await self.redis_client.get(redis_key)
-
-                if cached_response:
-                    # Parse la réponse JSON en objet Python
-                    response_data = json.loads(cached_response)
-
-                    # Convertis les listes d'objets en Pydantic model
-                    categories = [
-                        CategoryResponse.model_validate(cat) for cat in response_data["categories"]
-                    ]
-
-                    return (categories, int(response_data["total"]))
-            except RedisError:
-                logger.warning("redis_unavailable", operation="get_list_categories", exc_info=True)
-            except (KeyError, TypeError, ValueError):
-                logger.warning("cache_corrupted", operation="get_list_categories", exc_info=True)
-
-        categories = await self.repository.get_all(skip=skip, limit=limit, name=name)
-        categories_resp = [CategoryResponse.model_validate(cat) for cat in categories]
-        total = await self.repository.count(name=name)
-
-        if name is None and redis_key is not None:
-            try:
-                await self.redis_client.set(
-                    redis_key,
-                    json.dumps(
-                        {
-                            "categories": [cat.model_dump(mode="json") for cat in categories_resp],
-                            "total": total,
-                        }
-                    ),
-                    ex=REDIS_TTL,
-                )
-            except RedisError:
-                logger.warning("redis_unavailable", operation="set_list_categories", exc_info=True)
+        except RedisError:
+            logger.warning("redis_unavailable", operation="set_list_categories", exc_info=True)
 
         return (categories_resp, total)
 
