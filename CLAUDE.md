@@ -130,6 +130,8 @@ A deleted row behaves exactly like a missing one, for admins as well: 404 on `GE
 
 **Access token** — a JWT whose payload is only `{"sub": str(user.id), "exp": ...}`, valid 5 minutes. `is_admin`/`is_active` are never baked in: `get_current_user` (exposed as `CurrentUserDep`, imported by every other router) re-fetches the `User` on each request and rejects inactive users, so a role change or deactivation applies immediately. The scheme is `HTTPBearer`, not `OAuth2PasswordBearer`: login takes a JSON body (`LoginRequest`), not the OAuth2 form.
 
+**Login takes the same time whether the email exists or not.** `AuthService.login` always runs `verify_password`, against `_DUMMY_PASSWORD_HASH` (a real Argon2 hash computed once at import) when the email is unknown — so response time can't be used to enumerate registered emails.
+
 **Refresh token** — an opaque random string (`secrets.token_urlsafe`), not a JWT, valid `REFRESH_TOKEN_EXPIRE_DAYS` and rotated on every use. Redis only ever stores its SHA-256, under three keys:
 
 ```
@@ -214,5 +216,6 @@ Accepted for now; don't "fix" them as a side effect of other work, and don't des
 - **Request logs are off outside debug.** The log level is `DEBUG` when `settings.DEBUG` is true and `WARNING` otherwise, so `request_completed` (info) is only emitted in debug mode.
 - **Logout does not revoke the access token.** It stays valid until it expires (5 minutes at most).
 - **The published image is a dev image.** The `Dockerfile` starts uvicorn with `--reload` and runs as root, and that is what CI pushes to GHCR.
+- **Registering with a taken email leaks that it's taken.** `POST /users` answers `409` for a duplicate email, unlike `/login`'s constant-time, same-message failure. Closing this would need the same dummy-work trick on the registration path, not done here.
 - **Registered emails can be enumerated.** `POST /login` answers much faster for an unknown email (Argon2 is never run), and `POST /users` answers 409 for an existing one.
 - **The last-admin guard is not atomic.** `set_user_active`/`set_user_admin` count the active admins, then write. Two admins demoting or deactivating each other at the same instant both pass the check and leave no admin.
