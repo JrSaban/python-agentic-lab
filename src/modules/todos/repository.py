@@ -4,6 +4,7 @@ Encapsule les requêtes SQL (SQLAlchemy 2.0 select, add, delete).
 """
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +45,7 @@ class TodoRepository(BaseRepository[Todo]):
         self, entity_id: int, *, owner_id: int | None, with_categories: bool = False
     ) -> Todo | None:
         """Récupère une tâche par son identifiant unique."""
-        query = select(Todo).where(Todo.id == entity_id)
+        query = select(Todo).where(Todo.id == entity_id, Todo.deleted_at.is_(None))
 
         if owner_id is not None:
             query = query.where(Todo.owner_id == owner_id)
@@ -85,6 +86,12 @@ class TodoRepository(BaseRepository[Todo]):
         await self.session.refresh(todo)
         return todo
 
+    async def delete(self, entity: Todo) -> None:
+        """Soft delete the entity by setting the deleted_at field to the current time."""
+        entity.deleted_at = datetime.now(UTC)
+        self.session.add(entity)
+        await self.session.flush()
+
     async def count(
         self,
         owner_id: int | None = None,
@@ -123,4 +130,6 @@ class TodoRepository(BaseRepository[Todo]):
 
         if category_ids is not None:
             query = query.where(Todo.categories.any(Category.id.in_(category_ids)))
+
+        query = query.where(Todo.deleted_at.is_(None))
         return query

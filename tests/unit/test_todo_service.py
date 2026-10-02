@@ -19,123 +19,7 @@ def admin_user():
     return User(id=2, email="admin@example.com", hashed_password="test", is_admin=True)
 
 
-async def test_get_todo_or_404_raises_when_not_found(regular_user: User):
-    mock_todo_repo = AsyncMock()
-    mock_todo_repo.get_by_id.return_value = None
-
-    service = TodoService(repository=mock_todo_repo, category_repository=AsyncMock())
-
-    with pytest.raises(NotFoundError):
-        await service.get_todo_or_404(user=regular_user, entity_id=1)
-
-    mock_todo_repo.get_by_id.assert_called_once_with(owner_id=1, entity_id=1, with_categories=False)
-
-
-async def test_get_todo_or_404_returns_todo_when_found(regular_user: User):
-    fake_todo = Todo(id=1, owner_id=1, title="Test")
-    mock_todo_repo = AsyncMock()
-    mock_todo_repo.get_by_id.return_value = fake_todo
-
-    service = TodoService(repository=mock_todo_repo, category_repository=AsyncMock())
-
-    result = await service.get_todo_or_404(user=regular_user, entity_id=1)
-
-    assert result == fake_todo
-    mock_todo_repo.get_by_id.assert_called_once_with(owner_id=1, entity_id=1, with_categories=False)
-
-
-async def test_create_todo_resolves_categories(regular_user: User):
-    mock_todo_repo = AsyncMock()
-    mock_category_repo = AsyncMock()
-    mock_category_repo.get_by_ids.return_value = ["cat1", "cat2"]
-
-    service = TodoService(repository=mock_todo_repo, category_repository=mock_category_repo)
-    data = TodoCreate(title="Test", category_ids=[1, 2])
-
-    await service.create_todo(owner_id=regular_user.id, data=data)
-
-    mock_todo_repo.create.assert_called_once_with(
-        owner_id=regular_user.id, data=data, categories=["cat1", "cat2"]
-    )
-
-
-async def test_update_todo_resolves_categories(regular_user: User):
-    mock_todo_repo = AsyncMock()
-    mock_category_repo = AsyncMock()
-    mock_category_repo.get_by_ids.return_value = ["cat1", "cat2"]
-    fake_todo = Todo(id=1, owner_id=1, title="Test")
-    mock_todo_repo.get_by_id.return_value = fake_todo
-    mock_todo_repo.update.return_value = fake_todo
-
-    service = TodoService(repository=mock_todo_repo, category_repository=mock_category_repo)
-    data = TodoUpdate(title="Test", category_ids=[1, 2])
-
-    result = await service.update_todo(user=regular_user, entity_id=1, data=data)
-
-    assert result == fake_todo
-    mock_todo_repo.get_by_id.assert_called_once_with(owner_id=1, entity_id=1, with_categories=True)
-    mock_category_repo.get_by_ids.assert_called_once_with([1, 2])
-    mock_todo_repo.update.assert_called_once_with(fake_todo, data, ["cat1", "cat2"])
-
-
-async def test_update_todo_without_categories(regular_user: User):
-    mock_todo_repo = AsyncMock()
-    mock_category_repo = AsyncMock()
-    fake_todo = Todo(id=1, owner_id=1, title="Test")
-    mock_todo_repo.get_by_id.return_value = fake_todo
-    mock_todo_repo.update.return_value = fake_todo
-
-    service = TodoService(repository=mock_todo_repo, category_repository=mock_category_repo)
-    data = TodoUpdate(title="Test")
-
-    result = await service.update_todo(user=regular_user, entity_id=1, data=data)
-
-    assert result == fake_todo
-    mock_todo_repo.get_by_id.assert_called_once_with(owner_id=1, entity_id=1, with_categories=False)
-    mock_category_repo.get_by_ids.assert_not_called()
-    mock_todo_repo.update.assert_called_once_with(fake_todo, data, None)
-
-
-async def test_delete_todo_calls_repo_delete_when_found(regular_user: User):
-    mock_todo_repo = AsyncMock()
-    fake_todo = Todo(id=1, owner_id=1, title="Test")
-    mock_todo_repo.get_by_id.return_value = fake_todo
-
-    service = TodoService(repository=mock_todo_repo, category_repository=AsyncMock())
-
-    await service.delete_todo(user=regular_user, entity_id=1)
-
-    mock_todo_repo.get_by_id.assert_called_once_with(owner_id=1, entity_id=1, with_categories=False)
-    mock_todo_repo.delete.assert_called_once_with(fake_todo)
-
-
-async def test_get_todo_by_another_user_raises_not_found_error(regular_user: User):
-    mock_todo_repo = AsyncMock()
-    mock_todo_repo.get_by_id.return_value = None
-    regular_user.id = 2
-
-    service = TodoService(repository=mock_todo_repo, category_repository=AsyncMock())
-
-    with pytest.raises(NotFoundError):
-        await service.get_todo_or_404(user=regular_user, entity_id=1)
-
-    mock_todo_repo.get_by_id.assert_called_once_with(owner_id=2, entity_id=1, with_categories=False)
-
-
-async def test_get_todo_by_admin_returns_todo(admin_user: User):
-    mock_todo_repo = AsyncMock()
-    fake_todo = Todo(id=1, owner_id=1, title="Test")
-    mock_todo_repo.get_by_id.return_value = fake_todo
-
-    service = TodoService(repository=mock_todo_repo, category_repository=AsyncMock())
-
-    result = await service.get_todo_or_404(user=admin_user, entity_id=1)
-
-    assert result == fake_todo
-    assert result.owner_id != admin_user.id
-    mock_todo_repo.get_by_id.assert_called_once_with(
-        owner_id=None, entity_id=1, with_categories=False
-    )
+# --- list_todos ---
 
 
 @pytest.mark.parametrize(
@@ -178,6 +62,63 @@ async def test_list_todos_owner_filter_depends_on_role(is_admin, expected_owner_
     )
 
 
+# --- get_todo_or_404 ---
+
+
+async def test_get_todo_or_404_returns_todo_when_found(regular_user: User):
+    fake_todo = Todo(id=1, owner_id=1, title="Test")
+    mock_todo_repo = AsyncMock()
+    mock_todo_repo.get_by_id.return_value = fake_todo
+
+    service = TodoService(repository=mock_todo_repo, category_repository=AsyncMock())
+
+    result = await service.get_todo_or_404(user=regular_user, entity_id=1)
+
+    assert result == fake_todo
+    mock_todo_repo.get_by_id.assert_called_once_with(owner_id=1, entity_id=1, with_categories=False)
+
+
+async def test_get_todo_or_404_raises_when_not_found(regular_user: User):
+    mock_todo_repo = AsyncMock()
+    mock_todo_repo.get_by_id.return_value = None
+
+    service = TodoService(repository=mock_todo_repo, category_repository=AsyncMock())
+
+    with pytest.raises(NotFoundError):
+        await service.get_todo_or_404(user=regular_user, entity_id=1)
+
+    mock_todo_repo.get_by_id.assert_called_once_with(owner_id=1, entity_id=1, with_categories=False)
+
+
+async def test_get_todo_by_another_user_raises_not_found_error(regular_user: User):
+    mock_todo_repo = AsyncMock()
+    mock_todo_repo.get_by_id.return_value = None
+    regular_user.id = 2
+
+    service = TodoService(repository=mock_todo_repo, category_repository=AsyncMock())
+
+    with pytest.raises(NotFoundError):
+        await service.get_todo_or_404(user=regular_user, entity_id=1)
+
+    mock_todo_repo.get_by_id.assert_called_once_with(owner_id=2, entity_id=1, with_categories=False)
+
+
+async def test_get_todo_by_admin_returns_todo(admin_user: User):
+    mock_todo_repo = AsyncMock()
+    fake_todo = Todo(id=1, owner_id=1, title="Test")
+    mock_todo_repo.get_by_id.return_value = fake_todo
+
+    service = TodoService(repository=mock_todo_repo, category_repository=AsyncMock())
+
+    result = await service.get_todo_or_404(user=admin_user, entity_id=1)
+
+    assert result == fake_todo
+    assert result.owner_id != admin_user.id
+    mock_todo_repo.get_by_id.assert_called_once_with(
+        owner_id=None, entity_id=1, with_categories=False
+    )
+
+
 async def test_get_todo_or_404_forwards_with_categories(regular_user):
     fake_todo = Todo(id=1, owner_id=1, title="Test")
     mock_todo_repo = AsyncMock()
@@ -189,6 +130,24 @@ async def test_get_todo_or_404_forwards_with_categories(regular_user):
 
     assert result == fake_todo
     mock_todo_repo.get_by_id.assert_called_once_with(owner_id=1, entity_id=1, with_categories=True)
+
+
+# --- create_todo ---
+
+
+async def test_create_todo_resolves_categories(regular_user: User):
+    mock_todo_repo = AsyncMock()
+    mock_category_repo = AsyncMock()
+    mock_category_repo.get_by_ids.return_value = ["cat1", "cat2"]
+
+    service = TodoService(repository=mock_todo_repo, category_repository=mock_category_repo)
+    data = TodoCreate(title="Test", category_ids=[1, 2])
+
+    await service.create_todo(owner_id=regular_user.id, data=data)
+
+    mock_todo_repo.create.assert_called_once_with(
+        owner_id=regular_user.id, data=data, categories=["cat1", "cat2"]
+    )
 
 
 async def test_create_todo_without_categories(regular_user):
@@ -203,6 +162,46 @@ async def test_create_todo_without_categories(regular_user):
 
     mock_category_repo.get_by_ids.assert_called_once_with([])
     mock_todo_repo.create.assert_called_once_with(owner_id=1, data=data, categories=[])
+
+
+# --- update_todo ---
+
+
+async def test_update_todo_resolves_categories(regular_user: User):
+    mock_todo_repo = AsyncMock()
+    mock_category_repo = AsyncMock()
+    mock_category_repo.get_by_ids.return_value = ["cat1", "cat2"]
+    fake_todo = Todo(id=1, owner_id=1, title="Test")
+    mock_todo_repo.get_by_id.return_value = fake_todo
+    mock_todo_repo.update.return_value = fake_todo
+
+    service = TodoService(repository=mock_todo_repo, category_repository=mock_category_repo)
+    data = TodoUpdate(title="Test", category_ids=[1, 2])
+
+    result = await service.update_todo(user=regular_user, entity_id=1, data=data)
+
+    assert result == fake_todo
+    mock_todo_repo.get_by_id.assert_called_once_with(owner_id=1, entity_id=1, with_categories=True)
+    mock_category_repo.get_by_ids.assert_called_once_with([1, 2])
+    mock_todo_repo.update.assert_called_once_with(fake_todo, data, ["cat1", "cat2"])
+
+
+async def test_update_todo_without_categories(regular_user: User):
+    mock_todo_repo = AsyncMock()
+    mock_category_repo = AsyncMock()
+    fake_todo = Todo(id=1, owner_id=1, title="Test")
+    mock_todo_repo.get_by_id.return_value = fake_todo
+    mock_todo_repo.update.return_value = fake_todo
+
+    service = TodoService(repository=mock_todo_repo, category_repository=mock_category_repo)
+    data = TodoUpdate(title="Test")
+
+    result = await service.update_todo(user=regular_user, entity_id=1, data=data)
+
+    assert result == fake_todo
+    mock_todo_repo.get_by_id.assert_called_once_with(owner_id=1, entity_id=1, with_categories=False)
+    mock_category_repo.get_by_ids.assert_not_called()
+    mock_todo_repo.update.assert_called_once_with(fake_todo, data, None)
 
 
 async def test_update_todo_of_another_user_raises_not_found_error(regular_user):
@@ -238,6 +237,22 @@ async def test_update_todo_as_admin_on_another_users_todo(admin_user):
         owner_id=None, entity_id=1, with_categories=False
     )
     mock_todo_repo.update.assert_called_once_with(fake_todo, data, None)
+
+
+# --- delete_todo ---
+
+
+async def test_delete_todo_calls_repo_delete_when_found(regular_user: User):
+    mock_todo_repo = AsyncMock()
+    fake_todo = Todo(id=1, owner_id=1, title="Test")
+    mock_todo_repo.get_by_id.return_value = fake_todo
+
+    service = TodoService(repository=mock_todo_repo, category_repository=AsyncMock())
+
+    await service.delete_todo(user=regular_user, entity_id=1)
+
+    mock_todo_repo.get_by_id.assert_called_once_with(owner_id=1, entity_id=1, with_categories=False)
+    mock_todo_repo.delete.assert_called_once_with(fake_todo)
 
 
 async def test_delete_todo_of_another_user_raises_not_found_error(regular_user):
