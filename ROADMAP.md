@@ -10,8 +10,6 @@ lives in the README's Features section and in `CLAUDE.md`, not here.
 
 1. **Security audit follow-ups.** Small fixes from the 2026-10-02 security audit, one branch
    each, in this order. Remove a line when its PR merges, and the whole item with the last one.
-   - `fix/debug-default-false` — `Settings.DEBUG` defaults to `False`; `.env.example` keeps
-     `True` for development.
    - `fix/revoke-sessions-on-password-change` — `PATCH /users/me/password` revokes the user's
      refresh token, forcing a new login. The revocation becomes a reusable `AuthService` method
      (shared with `logout`), called from the `users` router.
