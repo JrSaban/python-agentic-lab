@@ -5,9 +5,8 @@ Encapsule les requêtes SQL (SQLAlchemy 2.0 select, add, delete).
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from sqlalchemy import and_
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
