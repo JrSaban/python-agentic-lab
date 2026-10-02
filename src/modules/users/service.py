@@ -95,7 +95,7 @@ class UserService:
     async def update_email(self, current_user: User, data: UserSelfEmailUpdate) -> User:
         """Update email of a user."""
         if not verify_password(data.current_password, current_user.hashed_password):
-            raise ForbiddenError("L'ancien mot de passe ne correspond pas")
+            raise ForbiddenError("Le mot de passe actuel ne correspond pas")
 
         try:
             return await self.repository.update_email(current_user, data.new_email)

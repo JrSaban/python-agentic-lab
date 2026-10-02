@@ -183,7 +183,7 @@ async def update_password(
     summary="Changer l'email d'un utilisateur",
     description="""
         Changer l'email d'un utilisateur par son ID.
-        Seul l'utilisateur concerné ou un admin peut modifier son email.
+        Réservé aux admins, et jamais sur leur propre compte.
         Toutes les sessions de l'utilisateur seront révoquées.
     """,
 )
