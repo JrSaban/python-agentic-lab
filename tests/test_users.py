@@ -248,6 +248,58 @@ async def test_update_password_wrong_old_password_returns_403(
     assert response.status_code == 403
 
 
+async def test_update_password_revokes_refresh_token(
+    authenticated_client: AsyncClient, current_user: User
+) -> None:
+    """Changing your password revokes your current refresh token, forcing a new
+    login — same mechanism (AuthService.revoke_session) as logout."""
+    login_response = await authenticated_client.post(
+        "/api/v1/login", json={"email": current_user.email, "password": "secret123"}
+    )
+    refresh_token = login_response.json()["refresh_token"]
+
+    response = await authenticated_client.patch(
+        "/api/v1/users/me/password",
+        json={
+            "new_password": "new_password",
+            "old_password": "secret123",
+            "confirm_new_password": "new_password",
+        },
+    )
+    assert response.status_code == 200
+
+    refresh_response = await authenticated_client.post(
+        "/api/v1/refresh", json={"refresh_token": refresh_token}
+    )
+    assert refresh_response.status_code == 401
+
+
+async def test_update_password_failure_does_not_revoke_refresh_token(
+    authenticated_client: AsyncClient, current_user: User
+) -> None:
+    """An unsuccessful password change (wrong old password) never reaches the
+    revocation step — the existing refresh token keeps working."""
+    login_response = await authenticated_client.post(
+        "/api/v1/login", json={"email": current_user.email, "password": "secret123"}
+    )
+    refresh_token = login_response.json()["refresh_token"]
+
+    response = await authenticated_client.patch(
+        "/api/v1/users/me/password",
+        json={
+            "new_password": "new_password",
+            "old_password": "wrong_password",
+            "confirm_new_password": "new_password",
+        },
+    )
+    assert response.status_code == 403
+
+    refresh_response = await authenticated_client.post(
+        "/api/v1/refresh", json={"refresh_token": refresh_token}
+    )
+    assert refresh_response.status_code == 200
+
+
 async def test_set_user_active_as_admin_success(
     authenticated_admin: AsyncClient, current_user: User
 ) -> None:
