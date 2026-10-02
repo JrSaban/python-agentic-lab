@@ -219,6 +219,23 @@ async def test_update_user_other_as_regular_user_returns_403(
     assert response.status_code == 403
 
 
+async def test_update_user_ignores_email(
+    authenticated_client: AsyncClient, current_user: User
+) -> None:
+    """An `email` sent to the general PATCH /api/v1/users/{id} is silently dropped:
+    the request succeeds, the other fields are applied, and the email is unchanged.
+    Changing it has to go through the password-gated /users/me/email."""
+    original_email = current_user.email
+
+    response = await authenticated_client.patch(
+        f"/api/v1/users/{current_user.id}",
+        json={"first_name": "Jeanne", "email": "hacker@test.com"},
+    )
+    assert response.status_code == 200
+    assert response.json()["first_name"] == "Jeanne"
+    assert response.json()["email"] == original_email
+
+
 # --- update_email ---
 
 
@@ -275,6 +292,28 @@ async def test_update_email_revokes_refresh_token(
         "/api/v1/refresh", json={"refresh_token": refresh_token}
     )
     assert refresh_response.status_code == 401
+
+
+async def test_update_email_failure_does_not_revoke_refresh_token(
+    authenticated_client: AsyncClient, current_user: User
+) -> None:
+    """An unsuccessful email change (wrong current password) never reaches the
+    revocation step — the existing refresh token keeps working."""
+    login_response = await authenticated_client.post(
+        "/api/v1/login", json={"email": current_user.email, "password": "secret123"}
+    )
+    refresh_token = login_response.json()["refresh_token"]
+
+    response = await authenticated_client.patch(
+        "/api/v1/users/me/email",
+        json={"new_email": "new@test.com", "current_password": "wrong_password"},
+    )
+    assert response.status_code == 403
+
+    refresh_response = await authenticated_client.post(
+        "/api/v1/refresh", json={"refresh_token": refresh_token}
+    )
+    assert refresh_response.status_code == 200
 
 
 # --- update_password ---
