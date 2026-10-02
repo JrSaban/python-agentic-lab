@@ -178,12 +178,13 @@ Responses are never filtered field by field according to the viewer's role (`Cat
 Only categories are cached: they are shared, read by everyone, and rarely written. Todos are per-user and are not cached. All of it lives in `CategoryService`; the repository knows nothing about Redis.
 
 ```
-category:<id>                                 → CategoryResponse JSON               (TTL 8h)
-categories:list:<gen>:<md5(skip,limit,name)>  → {"categories": [...], "total": n}   (TTL 8h)
-categories:list:gen                           → integer generation counter          (no TTL)
+category:<id>                            → CategoryResponse JSON               (TTL 8h)
+categories:list:<gen>:<md5(skip,limit)>  → {"categories": [...], "total": n}   (TTL 8h)
+categories:list:gen                      → integer generation counter          (no TTL)
 ```
 
-- **List invalidation is by generation.** A list can be cached under any combination of `skip`/`limit`/`name`, so instead of finding and deleting those keys, every create/update/delete does `INCR categories:list:gen`. Old entries become unreachable and expire on their own.
+- **A `name` search is never cached**, read or written — each distinct search term would otherwise mint its own cache entry forever, with no bound on how many. `skip` also has an upper bound for the same reason.
+- **List invalidation is by generation.** A list can be cached under any combination of `skip`/`limit`, so instead of finding and deleting those keys, every create/update/delete does `INCR categories:list:gen`. Old entries become unreachable and expire on their own.
 - **Item invalidation** is a `DEL category:<id>` on update and delete.
 - **Redis is optional at runtime.** Every cache read, write and invalidation catches `RedisError` (and, on reads, an unparsable payload), logs a warning (`redis_unavailable` / `cache_corrupted`) and falls back to the database. A cache problem must never turn into a 5xx. This applies to the cache only: the refresh-token store has no fallback, and auth fails if Redis is down.
 - `get_category_or_404` is the **uncached** read. Use it for anything that then mutates the row or needs an ORM instance (`update_category`, `delete_category`, the existence check of `GET /categories/{id}/todos`); only `GET /categories/{id}` uses `get_category_cached`.

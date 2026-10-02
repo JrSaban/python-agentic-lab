@@ -38,6 +38,15 @@ class CategoryService:
         filtered_key = {k: v for k, v in keys.items() if v is not None}
         return f"categories:list:{gen}:{hash_redis_key(json.dumps(filtered_key, sort_keys=True))}"
 
+    async def _fetch_from_db(
+        self, skip: int, limit: int, name: str | None
+    ) -> tuple[Sequence[CategoryResponse], int]:
+        categories = await self.repository.get_all(skip=skip, limit=limit, name=name)
+        categories_resp = [CategoryResponse.model_validate(cat) for cat in categories]
+        total = await self.repository.count(name=name)
+
+        return (categories_resp, total)
+
     async def _invalidate_cache(self, *, key: int | None = None) -> None:
         """Invalidate cache."""
         try:
@@ -51,7 +60,10 @@ class CategoryService:
     async def list_categories(
         self, skip: int = 0, limit: int = 100, name: str | None = None
     ) -> tuple[Sequence[CategoryResponse], int]:
-        """Récupère l'ensemble des catégories avec pagination."""
+        """Fetch all categories with pagination."""
+        if name is not None:
+            return await self._fetch_from_db(skip, limit, name)
+
         try:
             gen = cast(str | None, await self.redis_client.get("categories:list:gen"))
         except RedisError:
@@ -59,7 +71,7 @@ class CategoryService:
 
         redis_key = self._redis_key_categories_list(
             gen=int(gen) if gen else 0,
-            keys={"skip": skip, "limit": limit, "name": name},
+            keys={"skip": skip, "limit": limit},
         )
 
         try:
@@ -80,9 +92,7 @@ class CategoryService:
         except (KeyError, TypeError, ValueError):
             logger.warning("cache_corrupted", operation="get_list_categories", exc_info=True)
 
-        categories = await self.repository.get_all(skip=skip, limit=limit, name=name)
-        categories_resp = [CategoryResponse.model_validate(cat) for cat in categories]
-        total = await self.repository.count(name=name)
+        categories_resp, total = await self._fetch_from_db(skip, limit, name)
 
         try:
             await self.redis_client.set(
