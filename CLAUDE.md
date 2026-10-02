@@ -157,6 +157,8 @@ Rules, all deliberate:
 
 **Roles** — `is_admin`/`is_active` are not settable through `PATCH /users/{id}` (`UserUpdate` has no such fields; Pydantic drops them silently). They change only through `PATCH /users/{id}/active` and `.../admin`, both admin-only and backed by dedicated repository methods (`set_active`/`set_admin`). Both refuse to deactivate or demote the last usable admin, counted as `count(is_admin=True, is_active=True) == 1` — the `is_active=True` part matters, otherwise already-deactivated admins would be counted as available.
 
+**Email** is excluded from `UserUpdate` the same way, for the same reason: changing it is sensitive enough to need its own gate. `PATCH /users/me/email` requires the current password; `PATCH /users/{id}/email` is admin-only and 403s on the admin's own id, forcing them through the password-gated route for themselves too. Both revoke the target's session via `AuthService.revoke_session`.
+
 ### Ownership & permissions
 
 `Todo.owner_id` and `Category.created_by_id` are named differently on purpose: the two resources treat their user differently.
