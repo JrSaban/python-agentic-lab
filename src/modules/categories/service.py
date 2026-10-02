@@ -52,6 +52,8 @@ class CategoryService:
         self, skip: int = 0, limit: int = 100, name: str | None = None
     ) -> tuple[Sequence[CategoryResponse], int]:
         """Fetch all categories with pagination."""
+        redis_key = None
+
         if name is None:
             try:
                 gen = cast(str | None, await self.redis_client.get("categories:list:gen"))
@@ -85,10 +87,10 @@ class CategoryService:
         categories_resp = [CategoryResponse.model_validate(cat) for cat in categories]
         total = await self.repository.count(name=name)
 
-        if name is None:
+        if name is None and redis_key is not None:
             try:
                 await self.redis_client.set(
-                    redis_key,  # pyrefly: ignore[unbound-name]
+                    redis_key,
                     json.dumps(
                         {
                             "categories": [cat.model_dump(mode="json") for cat in categories_resp],
