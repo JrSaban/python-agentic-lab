@@ -71,3 +71,8 @@ class BaseRepository[ModelT: Base]:
                 case _:
                     raise ValueError(f"Unsupported operator: {filter_param.op}")
         return query
+
+    def escape_ilike_value(self, value: str) -> str:
+        """Escape \\, % and _ so an ilike search matches them literally, not as wildcards."""
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
