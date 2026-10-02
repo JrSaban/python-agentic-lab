@@ -49,7 +49,7 @@ class AuthService:
             await self.redis_client.delete(self._redis_key("token", old_token))
 
     async def revoke_session(self, user: User) -> None:
-        """Revoke all sessions for a user."""
+        """Revoke the user's sessions."""
         user_key = self._redis_key("user", user.id)
         old_token = cast(str | None, await self.redis_client.getdel(user_key))
 
