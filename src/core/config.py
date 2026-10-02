@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "Todo API"
     APP_ENV: str = "development"
-    DEBUG: bool = True
+    DEBUG: bool = False
     API_V1_STR: str = "/api/v1"
 
     # Configuration PostgreSQL
