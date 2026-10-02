@@ -44,7 +44,7 @@ CategoryServiceDep = Annotated[CategoryService, Depends(get_category_service)]
 async def list_categories(
     service: CategoryServiceDep,
     current_user: CurrentUserDep,
-    skip: Annotated[int, Query(ge=0, description="Nombre d'éléments à sauter")] = 0,
+    skip: Annotated[int, Query(ge=0, le=2000, description="Nombre d'éléments à sauter")] = 0,
     limit: Annotated[int, Query(ge=1, le=100, description="Nombre max d'éléments")] = 50,
     name: Annotated[str | None, Query(min_length=2, description="Filtre sur le nom")] = None,
 ) -> PaginatedResponse[CategoryResponse]:
