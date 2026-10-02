@@ -92,7 +92,7 @@ async def test_login_user_not_found_raises_unauthorized_error(
     with pytest.raises(UnauthorizedError):
         await auth_service.login(LOGIN_REQUEST)
 
-    mock_verify_password.assert_not_called()
+    mock_verify_password.assert_called_once_with(LOGIN_REQUEST.password, "dummy_password_hash")
     mock_user_repo.update_last_login_date.assert_not_called()
     mock_redis.set.assert_not_called()
 
