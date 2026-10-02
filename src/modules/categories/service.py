@@ -88,7 +88,7 @@ class CategoryService:
         if name is None:
             try:
                 await self.redis_client.set(
-                    redis_key, # pyrefly: ignore[unbound-name]
+                    redis_key,  # pyrefly: ignore[unbound-name]
                     json.dumps(
                         {
                             "categories": [cat.model_dump(mode="json") for cat in categories_resp],
