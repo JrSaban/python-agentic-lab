@@ -44,26 +44,39 @@ class UserUpdate(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    email: EmailStr | None = Field(
-        default=None, max_length=255, description="Email de l'utilisateur"
-    )
     first_name: str | None = Field(
         default=None, max_length=100, description="Prénom de l'utilisateur"
     )
     last_name: str | None = Field(default=None, max_length=100, description="Nom de l'utilisateur")
     pseudo: str | None = Field(default=None, max_length=50, description="Pseudo de l'utilisateur")
 
-    @field_validator("email", "first_name", "last_name")
+    @field_validator("first_name", "last_name")
     @classmethod
     def prevent_explicit_none(cls, value: str | None, info) -> str | None:
         """Rejette la requête si le client envoie explicitement la clé avec la valeur null."""
         if value is None:
             raise ValueError(f"Le champ '{info.field_name}' ne peut pas être null s'il est fourni.")
-
-        if info.field_name == "email":
-            return value.lower()
-
         return value
+
+
+class UserSelfEmailUpdate(BaseModel):
+    """Payload when a user wants to change his email."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    old_email: EmailStr = Field(..., max_length=255, description="Ancien email de l'utilisateur")
+    new_email: EmailStr = Field(..., max_length=255, description="Nouvel email de l'utilisateur")
+    current_password: str = Field(
+        ..., min_length=6, max_length=255, description="Mot de passe actuel de l'utilisateur"
+    )
+
+    @field_validator("new_email")
+    @classmethod
+    def new_email_not_equal_old_email(cls, value: str, info) -> str:
+        """Checks that the new email is different from the old email."""
+        if value == info.data["old_email"]:
+            raise ValueError("Le nouvel email doit être différent de l'ancien.")
+        return value.lower()
 
 
 class UserPasswordUpdate(BaseModel):
@@ -84,7 +97,7 @@ class UserPasswordUpdate(BaseModel):
     @field_validator("confirm_new_password")
     @classmethod
     def passwords_match(cls, value: str, info) -> str:
-        """Vérifie que le nouveau mot de passe et sa confirmation correspondent."""
+        """Checks that the new password and its confirmation match."""
         if value != info.data["new_password"]:
             raise ValueError("Les nouveaux mots de passe ne correspondent pas.")
         return value
