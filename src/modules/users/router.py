@@ -1,5 +1,6 @@
 """Routing & Controller Layer pour le domaine Users."""
 
+from src.modules.auth.router import AuthServiceDep
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
@@ -137,13 +138,16 @@ async def update_user(
 )
 async def update_password(
     service: UserServiceDep,
+    auth_service: AuthServiceDep,
     current_user: CurrentUserDep,
     data: UserPasswordUpdate,
 ) -> User:
-    return await service.update_password(
+    user = await service.update_password(
         current_user=current_user,
         data=data,
     )
+    await auth_service.revoke_session(user)
+    return user
 
 
 @router.patch(
