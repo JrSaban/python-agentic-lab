@@ -269,6 +269,15 @@ async def test_list_todos_filter_by_category_ids(
     assert len(data["items"]) == 3
 
 
+async def test_list_todos_too_many_category_ids_returns_422(
+    authenticated_client: AsyncClient,
+) -> None:
+    """More than 20 category_ids in the filter is rejected."""
+    query = "&".join(f"category_ids={i}" for i in range(21))
+    response = await authenticated_client.get(f"/api/v1/todos?{query}")
+    assert response.status_code == 422
+
+
 # --- get ---
 
 
