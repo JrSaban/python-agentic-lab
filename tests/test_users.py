@@ -4,7 +4,6 @@ from httpx import AsyncClient
 
 from src.modules.users.models import User
 
-
 # --- create_user ---
 
 
@@ -223,9 +222,7 @@ async def test_update_user_other_as_regular_user_returns_403(
 # --- update_email ---
 
 
-async def test_update_email_success(
-    authenticated_client: AsyncClient, current_user: User
-) -> None:
+async def test_update_email_success(authenticated_client: AsyncClient, current_user: User) -> None:
     """Successful self-service email change (PATCH /api/v1/users/me/email) → 200."""
     response = await authenticated_client.patch(
         "/api/v1/users/me/email",

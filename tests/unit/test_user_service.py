@@ -14,7 +14,6 @@ from src.modules.users.schemas import (
 )
 from src.modules.users.service import UserService
 
-
 # --- list_users ---
 
 
