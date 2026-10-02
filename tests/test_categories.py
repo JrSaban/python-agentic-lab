@@ -210,6 +210,29 @@ async def test_list_categories_filter_by_name(authenticated_client: AsyncClient)
     assert data["items"][1] == cat_1.json()
 
 
+async def test_list_categories_filter_by_name_escapes_wildcards(
+    authenticated_client: AsyncClient,
+) -> None:
+    """A literal % or _ in the search term is matched literally, not as a SQL
+    wildcard: "50%" doesn't also match "50X off", and "a_b" doesn't match "aXb"."""
+    percent_cat = await authenticated_client.post("/api/v1/categories", json={"name": "50% off"})
+    await authenticated_client.post("/api/v1/categories", json={"name": "50X off"})
+    underscore_cat = await authenticated_client.post("/api/v1/categories", json={"name": "a_b"})
+    await authenticated_client.post("/api/v1/categories", json={"name": "aXb"})
+
+    response = await authenticated_client.get("/api/v1/categories", params={"name": "50%"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0] == percent_cat.json()
+
+    response = await authenticated_client.get("/api/v1/categories", params={"name": "a_b"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0] == underscore_cat.json()
+
+
 async def test_list_categories_with_name_filter_is_never_cached(
     authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
 ) -> None:
