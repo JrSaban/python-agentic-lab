@@ -59,23 +59,6 @@ class UserUpdate(BaseModel):
         return value
 
 
-class UserSelfEmailUpdate(BaseModel):
-    """Payload when a user wants to change his email."""
-
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    new_email: EmailStr = Field(..., max_length=255, description="Nouvel email de l'utilisateur")
-    current_password: str = Field(
-        ..., min_length=6, max_length=255, description="Mot de passe actuel de l'utilisateur"
-    )
-
-    @field_validator("new_email")
-    @classmethod
-    def lower_case_email(cls, value: str) -> str:
-        """Converts the email to lowercase."""
-        return value.lower()
-
-
 class UserEmailUpdate(BaseModel):
     """Payload when an admin wants to change a user's email."""
 
@@ -88,6 +71,14 @@ class UserEmailUpdate(BaseModel):
     def lower_case_email(cls, value: str) -> str:
         """Converts the email to lowercase."""
         return value.lower()
+
+
+class UserSelfEmailUpdate(UserEmailUpdate):
+    """Payload when a user wants to change his email."""
+
+    current_password: str = Field(
+        ..., max_length=255, description="Mot de passe actuel de l'utilisateur"
+    )
 
 
 class UserPasswordUpdate(BaseModel):
