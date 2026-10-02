@@ -1,6 +1,5 @@
 """Routing & Controller Layer pour le domaine Users."""
 
-from src.modules.auth.router import AuthServiceDep
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
@@ -8,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_session
 from src.core.schemas import PaginatedResponse
-from src.modules.auth.router import CurrentUserDep
+from src.modules.auth.router import AuthServiceDep, CurrentUserDep
 from src.modules.users.models import User
 from src.modules.users.repository import UserRepository
 from src.modules.users.schemas import (
