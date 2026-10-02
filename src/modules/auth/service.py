@@ -10,6 +10,7 @@ from src.core.exceptions import UnauthorizedError
 from src.core.security import (
     create_access_token,
     generate_refresh_token,
+    hash_password,
     hash_refresh_token,
     verify_password,
 )
@@ -17,7 +18,7 @@ from src.modules.auth.schemas import LoginRequest, TokenResponse
 from src.modules.users.models import User
 from src.modules.users.repository import UserRepository
 
-_DUMMY_PASSWORD_HASH = "dummy_password_hash"
+_DUMMY_PASSWORD_HASH = hash_password("dummy_password_hash")
 
 
 class AuthService:
