@@ -8,7 +8,8 @@ FastAPI To-Do List API built with a Clean Architecture layering, used as a learn
 
 Language conventions, all deliberate:
 
-- Docstrings, code comments, and API error messages (`detail`) are in **French**. Several docstrings carry a Laravel analogy ("Équivalent conceptuel de ... dans Laravel") — keep them, and add one when a new cross-cutting piece has an obvious Laravel counterpart.
+- Module-level docstrings (top of file) and API error messages (`detail`) are in **French**. Several module docstrings carry a Laravel analogy ("Équivalent conceptuel de ... dans Laravel") — keep them, and add one when a new cross-cutting piece has an obvious Laravel counterpart.
+- Function, method and class docstrings are in **English**. Many existing ones are still in French from before this rule.
 - Test docstrings, `CLAUDE.md`, `README.md` and `CONTRIBUTING.md` are in English.
 
 Branch names, commit messages and PR rules live in `CONTRIBUTING.md`; the PR template is `.github/pull_request_template.md` (Why / Changes / Notes). Planned work is in `ROADMAP.md`: an item is removed from it in the same PR that finishes it.
