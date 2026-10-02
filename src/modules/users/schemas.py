@@ -79,6 +79,20 @@ class UserSelfEmailUpdate(BaseModel):
         return value.lower()
 
 
+class UserEmailUpdate(BaseModel):
+    """Payload when an admin wants to change a user's email."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    new_email: EmailStr = Field(..., max_length=255, description="Nouvel email de l'utilisateur")
+
+    @field_validator("new_email")
+    @classmethod
+    def lower_case_email(cls, value: str) -> str:
+        """Converts the email to lowercase."""
+        return value.lower()
+
+
 class UserPasswordUpdate(BaseModel):
     """Payload reçu lors d'un PATCH /users/{id}/password."""
 
