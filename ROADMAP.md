@@ -10,9 +10,6 @@ lives in the README's Features section and in `CLAUDE.md`, not here.
 
 1. **Security audit follow-ups.** Small fixes from the 2026-10-02 security audit, one branch
    each, in this order. Remove a line when its PR merges, and the whole item with the last one.
-   - `chore/harden-docker-setup` — bind the Postgres and Redis ports to `127.0.0.1` in
-     `docker-compose.yml`, and add a `.dockerignore` so `.env`, `.git` and `.venv` stay out of
-     the image.
    - `fix/debug-default-false` — `Settings.DEBUG` defaults to `False`; `.env.example` keeps
      `True` for development.
    - `fix/revoke-sessions-on-password-change` — `PATCH /users/me/password` revokes the user's
