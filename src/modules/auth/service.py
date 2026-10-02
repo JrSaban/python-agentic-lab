@@ -18,7 +18,7 @@ from src.modules.auth.schemas import LoginRequest, TokenResponse
 from src.modules.users.models import User
 from src.modules.users.repository import UserRepository
 
-_DUMMY_PASSWORD_HASH = hash_password("dummy_password_hash")
+_DUMMY_PASSWORD_HASH = hash_password("dummy_password")
 
 
 class AuthService:

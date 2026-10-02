@@ -216,6 +216,5 @@ Accepted for now; don't "fix" them as a side effect of other work, and don't des
 - **Request logs are off outside debug.** The log level is `DEBUG` when `settings.DEBUG` is true and `WARNING` otherwise, so `request_completed` (info) is only emitted in debug mode.
 - **Logout does not revoke the access token.** It stays valid until it expires (5 minutes at most).
 - **The published image is a dev image.** The `Dockerfile` starts uvicorn with `--reload` and runs as root, and that is what CI pushes to GHCR.
-- **Registering with a taken email leaks that it's taken.** `POST /users` answers `409` for a duplicate email, unlike `/login`'s constant-time, same-message failure. Closing this would need the same dummy-work trick on the registration path, not done here.
-- **Registered emails can be enumerated.** `POST /login` answers much faster for an unknown email (Argon2 is never run), and `POST /users` answers 409 for an existing one.
+- **Registered emails can be enumerated through registration.** `POST /users` answers `409` for an email that is already taken. `/login` no longer leaks this (same message, same timing), but the 409 itself does: closing it means answering identically whether or not the email exists and confirming by email.
 - **The last-admin guard is not atomic.** `set_user_active`/`set_user_admin` count the active admins, then write. Two admins demoting or deactivating each other at the same instant both pass the check and leave no admin.
