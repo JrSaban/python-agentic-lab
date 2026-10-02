@@ -212,4 +212,6 @@ Accepted for now; don't "fix" them as a side effect of other work, and don't des
 - **Cache invalidation runs before the commit.** `_invalidate_cache` is called inside the service, but the transaction commits when `get_db_session` exits. A concurrent read in that window can re-cache the pre-update row for up to 8 hours.
 - **Request logs are off outside debug.** The log level is `DEBUG` when `settings.DEBUG` is true and `WARNING` otherwise, so `request_completed` (info) is only emitted in debug mode.
 - **Logout does not revoke the access token.** It stays valid until it expires (5 minutes at most).
-- **The published image is a dev image.** The `Dockerfile` starts uvicorn with `--reload`, and that is what CI pushes to GHCR.
+- **The published image is a dev image.** The `Dockerfile` starts uvicorn with `--reload` and runs as root, and that is what CI pushes to GHCR.
+- **Registered emails can be enumerated.** `POST /login` answers much faster for an unknown email (Argon2 is never run), and `POST /users` answers 409 for an existing one.
+- **The last-admin guard is not atomic.** `set_user_active`/`set_user_admin` count the active admins, then write. Two admins demoting or deactivating each other at the same instant both pass the check and leave no admin.
