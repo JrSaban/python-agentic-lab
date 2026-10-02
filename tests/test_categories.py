@@ -215,9 +215,7 @@ async def test_list_categories_filter_by_name_escapes_wildcards(
 ) -> None:
     """A literal % or _ in the search term is matched literally, not as a SQL
     wildcard: "50%" doesn't also match "50X off", and "a_b" doesn't match "aXb"."""
-    percent_cat = await authenticated_client.post(
-        "/api/v1/categories", json={"name": "50% off"}
-    )
+    percent_cat = await authenticated_client.post("/api/v1/categories", json={"name": "50% off"})
     await authenticated_client.post("/api/v1/categories", json={"name": "50X off"})
     underscore_cat = await authenticated_client.post("/api/v1/categories", json={"name": "a_b"})
     await authenticated_client.post("/api/v1/categories", json={"name": "aXb"})
