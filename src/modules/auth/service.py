@@ -17,6 +17,8 @@ from src.modules.auth.schemas import LoginRequest, TokenResponse
 from src.modules.users.models import User
 from src.modules.users.repository import UserRepository
 
+_DUMMY_PASSWORD_HASH = "dummy_password_hash"
+
 
 class AuthService:
     def __init__(self, user_repository: UserRepository, redis_client: Redis) -> None:
@@ -62,7 +64,10 @@ class AuthService:
         """Login a user."""
         user = await self.user_repository.get_by_email(data.email)
 
-        if user is None or not verify_password(data.password, user.hashed_password):
+        hashed_password = user.hashed_password if user is not None else _DUMMY_PASSWORD_HASH
+        password_valid = verify_password(data.password, hashed_password)
+
+        if user is None or not password_valid:
             raise UnauthorizedError("Email ou mot de passe incorrect")
         if not user.is_active:
             raise UnauthorizedError("Votre compte n'est pas actif")
