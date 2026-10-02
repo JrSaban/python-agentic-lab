@@ -129,7 +129,11 @@ class TodoRepository(BaseRepository[Todo]):
         )
 
         if category_ids is not None:
-            query = query.where(Todo.categories.any(Category.id.in_(category_ids)))
+            query = query.where(
+                Todo.categories.any(
+                    Category.id.in_(category_ids).and_(Category.deleted_at.is_(None))
+                )
+            )
 
         query = query.where(Todo.deleted_at.is_(None))
         return query
