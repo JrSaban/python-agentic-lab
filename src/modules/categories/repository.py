@@ -4,6 +4,7 @@ Encapsule les requêtes SQL (SQLAlchemy 2.0 select, add, delete).
 """
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,20 +27,21 @@ class CategoryRepository(BaseRepository[Category]):
 
         return await self.paginate(query, skip, limit)
 
+    async def get_by_id(self, entity_id: int) -> Category | None:
+        """Get model's entity by its ID"""
+        query = select(Category).where(Category.id == entity_id, Category.deleted_at.is_(None))
+
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
     async def get_by_ids(self, entity_ids: Sequence[int]) -> Sequence[Category]:
         """Récupère une liste de catégories par leurs identifiants."""
         if not entity_ids:
             return []
 
-        query = select(Category).where(Category.id.in_(entity_ids))
+        query = select(Category).where(Category.id.in_(entity_ids), Category.deleted_at.is_(None))
         result = await self.session.execute(query)
         return result.scalars().all()
-
-    async def get_by_name(self, name: str) -> Category | None:
-        """Récupère une catégorie par son nom."""
-        query = select(Category).where(func.lower(Category.name) == func.lower(name))
-        result = await self.session.execute(query)
-        return result.scalar_one_or_none()
 
     async def create(self, created_by_id: int, data: CategoryCreate) -> Category:
         """Crée et persiste une nouvelle catégorie."""
@@ -54,6 +56,12 @@ class CategoryRepository(BaseRepository[Category]):
         await self.session.refresh(category)
         return category
 
+    async def delete(self, entity: Category) -> None:
+        """Soft delete the entity by setting the deleted_at field to the current time."""
+        entity.deleted_at = datetime.now(UTC)
+        self.session.add(entity)
+        await self.session.flush()
+
     async def count(self, name: str | None = None) -> int:
         """Compte le nombre de catégories."""
         query = select(func.count()).select_from(Category)
@@ -66,6 +74,8 @@ class CategoryRepository(BaseRepository[Category]):
         name: str | None = None,
     ) -> Select:
         """Helper qui applique les filtres sur une requête."""
-        return self._apply_filter_params(
+        query = self._apply_filter_params(
             query, [FilterParams(column=Category.name, value=name, op="ilike")]
         )
+        query = query.where(Category.deleted_at.is_(None))
+        return query

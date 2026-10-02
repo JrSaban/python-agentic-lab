@@ -8,10 +8,11 @@ FastAPI To-Do List API built with a Clean Architecture layering, used as a learn
 
 Language conventions, all deliberate:
 
-- Docstrings, code comments, and API error messages (`detail`) are in **French**. Several docstrings carry a Laravel analogy ("Équivalent conceptuel de ... dans Laravel") — keep them, and add one when a new cross-cutting piece has an obvious Laravel counterpart.
+- Module-level docstrings (top of file) and API error messages (`detail`) are in **French**. Several module docstrings carry a Laravel analogy ("Équivalent conceptuel de ... dans Laravel") — keep them, and add one when a new cross-cutting piece has an obvious Laravel counterpart.
+- Function, method and class docstrings are in **English**. Many existing ones are still in French from before this rule.
 - Test docstrings, `CLAUDE.md`, `README.md` and `CONTRIBUTING.md` are in English.
 
-Branch names, commit messages and PR rules live in `CONTRIBUTING.md`; the PR template is `.github/pull_request_template.md` (Why / Changes / Notes).
+Branch names, commit messages and PR rules live in `CONTRIBUTING.md`; the PR template is `.github/pull_request_template.md` (Why / Changes / Notes). Planned work is in `ROADMAP.md`: an item is removed from it in the same PR that finishes it.
 
 ## Commands
 
@@ -98,7 +99,7 @@ Services return ORM models and the router serializes them through `response_mode
 
 ### Generic repository layer
 
-`BaseRepository[ModelT: Base]` provides `get_by_id`, `update`, `delete`, `paginate` and `count_query` — the parts that are genuinely identical across resources.
+`BaseRepository[ModelT: Base]` provides `get_by_id`, `update`, `delete`, `paginate` and `count_query` — the parts that are genuinely identical across resources. Its `get_by_id` and `delete` know nothing about soft deletes (`delete` is a real `DELETE`); `TodoRepository` and `CategoryRepository` override both.
 
 `TodoRepository` keeps its own `get_by_id`/`update` (`# pyrefly: ignore[bad-override]`), because `owner_id`/`categories` are required parameters the shared signature can't express without weakening the "no default" guarantee described under Ownership. This divergence is deliberate, not a gap to unify.
 
@@ -106,13 +107,22 @@ Services return ORM models and the router serializes them through `response_mode
 
 ### Uniqueness and race conditions
 
-`Category.name`, `User.email` and `User.pseudo` are unique **case-insensitively**, enforced by functional unique indexes (`uq_categories_name_lower`, `uq_users_email_lower`, `uq_users_pseudo_lower`, all on `lower(column)`), not by a `SELECT` before the `INSERT`. Services deliberately do no pre-check: two concurrent requests would both pass it. They call the repository, catch `IntegrityError`, and raise `ConflictError`.
+`Category.name`, `User.email` and `User.pseudo` are unique **case-insensitively**, enforced by functional unique indexes (`uq_partial_categories_name_lower`, `uq_users_email_lower`, `uq_users_pseudo_lower`, all on `lower(column)`), not by a `SELECT` before the `INSERT`. Services deliberately do no pre-check: two concurrent requests would both pass it. They call the repository, catch `IntegrityError`, and raise `ConflictError`.
 
 Consequences to keep in mind:
 
 - `UserService` has two unique columns, so it tells them apart by looking for the **index name** inside `str(e)` and re-raises anything it doesn't recognize. The index names are therefore part of the logic: renaming one in the model without updating the service turns a 409 into an unhandled 500. Both Postgres and SQLite include the index name in the error message, which is what lets the SQLite suite cover this.
 - A new unique column follows the same pattern: named functional index in `__table_args__`, hand-checked migration, `IntegrityError` → `ConflictError` in the service, and a `..._with_unrelated_integrity_error_reraises` style unit test.
 - The plain `index=True` on those columns is kept alongside the unique one for `ilike` filtering.
+- The category index is **partial** (`WHERE deleted_at IS NULL`): a name is unique among live categories only, so the name of a soft-deleted category can be reused by a create or a rename. The model declares both `postgresql_where` and `sqlite_where`; dropping the second would make the SQLite test suite enforce a stricter rule than production.
+
+### Soft deletes
+
+`Todo` and `Category` carry a nullable `deleted_at`; their repositories override `delete()` to set it instead of removing the row. `User` has no soft delete and no delete endpoint — an account is switched off through `is_active`.
+
+There is **no global scope**, unlike Laravel's `SoftDeletes` trait: every query on these two models filters `deleted_at IS NULL` by hand, and a new query must do the same. That includes queries going *through* the relationship (`selectinload`, `.any()`): a soft delete leaves the `todos_categories` rows in place, so the other side has to be filtered too.
+
+A deleted row behaves exactly like a missing one, for admins as well: 404 on `GET`/`PATCH`/`DELETE`, absent from lists and totals, silently dropped when its ID is sent in a todo's `category_ids`. There is no restore endpoint and no way to list deleted rows.
 
 ### Authentication
 
@@ -175,7 +185,7 @@ categories:list:gen                           → integer generation counter    
 
 ### Cross-module relationships
 
-`todos` and `categories` are many-to-many through `src/modules/todos_categories/`, a plain association `Table` with two `ON DELETE CASCADE` FKs. `todos/models.py` and `categories/models.py` import each other's class only under `TYPE_CHECKING`; the `todos_categories` table is imported normally by both, which is safe because it references `"todos.id"`/`"categories.id"` as strings and imports neither class.
+`todos` and `categories` are many-to-many through `src/modules/todos_categories/`, a plain association `Table` with two `ON DELETE CASCADE` FKs (which only matter for a hard delete — see "Soft deletes"). `todos/models.py` and `categories/models.py` import each other's class only under `TYPE_CHECKING`; the `todos_categories` table is imported normally by both, which is safe because it references `"todos.id"`/`"categories.id"` as strings and imports neither class.
 
 Dependencies between the two modules point one way, `categories → todos` at the router level and `todos → categories` at the schema level, never both for the same layer:
 

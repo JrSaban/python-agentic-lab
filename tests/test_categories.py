@@ -5,6 +5,7 @@ import json
 
 import fakeredis
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -145,6 +146,23 @@ async def test_create_category_concurrent_same_name_no_duplicate(
     assert count == 1
 
 
+async def test_create_category_reuses_name_of_deleted_category(
+    authenticated_admin: AsyncClient,
+) -> None:
+    """The unique index on name is partial (only among non-deleted rows): once a
+    category is soft-deleted, its name becomes free to reuse — unlike a plain
+    unique index, which would keep blocking it forever."""
+    create_res = await authenticated_admin.post("/api/v1/categories", json={"name": "Sport"})
+    category_id = create_res.json()["id"]
+
+    del_res = await authenticated_admin.delete(f"/api/v1/categories/{category_id}")
+    assert del_res.status_code == 204
+
+    response = await authenticated_admin.post("/api/v1/categories", json={"name": "Sport"})
+    assert response.status_code == 201
+    assert response.json()["id"] != category_id
+
+
 async def test_create_category_invalidates_list_cache(
     authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
 ) -> None:
@@ -248,6 +266,20 @@ async def test_list_categories_different_filters_use_different_cache_entries(
     assert gen == "1"
     keys = await redis_client.keys(f"categories:list:{gen}:*")
     assert len(keys) == 2
+
+
+async def test_deleted_category_excluded_from_list(authenticated_admin: AsyncClient) -> None:
+    """A soft-deleted category no longer appears in GET /categories, and total reflects it."""
+    cat_1 = await authenticated_admin.post("/api/v1/categories", json={"name": "Sport"})
+    await authenticated_admin.post("/api/v1/categories", json={"name": "House"})
+
+    await authenticated_admin.delete(f"/api/v1/categories/{cat_1.json()['id']}")
+
+    response = await authenticated_admin.get("/api/v1/categories")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["name"] == "House"
 
 
 # --- get ---
@@ -392,6 +424,25 @@ async def test_update_category_name_conflict_returns_409(authenticated_client: A
     assert response.json()["detail"] == "Une catégorie avec le nom house existe déjà."
 
 
+async def test_update_category_reuses_name_of_deleted_category(
+    authenticated_admin: AsyncClient,
+) -> None:
+    """Renaming a category to the name of a soft-deleted one succeeds — the partial
+    unique index doesn't count deleted rows, whether the write is an INSERT or an
+    UPDATE."""
+    deleted_cat = await authenticated_admin.post("/api/v1/categories", json={"name": "Sport"})
+    await authenticated_admin.delete(f"/api/v1/categories/{deleted_cat.json()['id']}")
+
+    create_res = await authenticated_admin.post("/api/v1/categories", json={"name": "House"})
+    category_id = create_res.json()["id"]
+
+    response = await authenticated_admin.patch(
+        f"/api/v1/categories/{category_id}", json={"name": "Sport"}
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "Sport"
+
+
 async def test_update_category_keep_same_name_succeeds(authenticated_client: AsyncClient) -> None:
     """Renaming a category to its own current name doesn't trigger a 409 Conflict."""
     # 1. Création de la catégorie
@@ -492,6 +543,25 @@ async def test_delete_category_removes_association_but_keeps_todo(
     get_todo = await authenticated_admin.get(f"/api/v1/todos/{todo_id}?include=categories")
     assert get_todo.status_code == 200
     assert get_todo.json()["categories"] == []
+
+
+async def test_delete_category_is_soft_delete(
+    authenticated_admin: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Deleting a category doesn't remove the row: the API treats it as gone (404),
+    but the row still exists directly in the database, with deleted_at set."""
+    create_res = await authenticated_admin.post("/api/v1/categories", json={"name": "Sport"})
+    category_id = create_res.json()["id"]
+
+    response = await authenticated_admin.delete(f"/api/v1/categories/{category_id}")
+    assert response.status_code == 204
+
+    get_response = await authenticated_admin.get(f"/api/v1/categories/{category_id}")
+    assert get_response.status_code == 404
+
+    result = await db_session.execute(select(Category).where(Category.id == category_id))
+    raw_category = result.scalar_one()
+    assert raw_category.deleted_at is not None
 
 
 async def test_delete_category_invalidates_cache(
@@ -606,3 +676,16 @@ async def test_get_todos_by_category_empty(authenticated_client: AsyncClient) ->
     data = response.json()
     assert data["total"] == 0
     assert data["items"] == []
+
+
+async def test_get_todos_by_deleted_category_returns_404(
+    authenticated_admin: AsyncClient,
+) -> None:
+    """GET /categories/{id}/todos on a soft-deleted category → 404, same as any other
+    missing category — get_category_or_404 already filters deleted_at IS NULL."""
+    cat_1 = await authenticated_admin.post("/api/v1/categories", json={"name": "Sport"})
+    cat_1_id = cat_1.json()["id"]
+    await authenticated_admin.delete(f"/api/v1/categories/{cat_1_id}")
+
+    response = await authenticated_admin.get(f"/api/v1/categories/{cat_1_id}/todos")
+    assert response.status_code == 404
