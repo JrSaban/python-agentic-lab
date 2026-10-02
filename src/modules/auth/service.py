@@ -48,6 +48,16 @@ class AuthService:
         if old_token is not None:
             await self.redis_client.delete(self._redis_key("token", old_token))
 
+    async def revoke_session(self, user: User) -> None:
+        """Revoke all sessions for a user."""
+        user_key = self._redis_key("user", user.id)
+        old_token = cast(str | None, await self.redis_client.getdel(user_key))
+
+        await self.redis_client.delete(self._redis_key("session_start", user.id))
+
+        if old_token is not None:
+            await self.redis_client.delete(self._redis_key("token", old_token))
+
     async def login(self, data: LoginRequest) -> TokenResponse:
         """Login a user."""
         user = await self.user_repository.get_by_email(data.email)
@@ -100,10 +110,4 @@ class AuthService:
 
     async def logout(self, user: User) -> None:
         """Logout a user."""
-        user_key = self._redis_key("user", user.id)
-        old_token = cast(str | None, await self.redis_client.getdel(user_key))
-
-        await self.redis_client.delete(self._redis_key("session_start", user.id))
-
-        if old_token is not None:
-            await self.redis_client.delete(self._redis_key("token", old_token))
+        await self.revoke_session(user)
