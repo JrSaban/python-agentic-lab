@@ -51,52 +51,54 @@ class CategoryService:
     async def list_categories(
         self, skip: int = 0, limit: int = 100, name: str | None = None
     ) -> tuple[Sequence[CategoryResponse], int]:
-        """Récupère l'ensemble des catégories avec pagination."""
-        try:
-            gen = cast(str | None, await self.redis_client.get("categories:list:gen"))
-        except RedisError:
-            gen = 0
+        """Fetch all categories with pagination."""
+        if name is None:
+            try:
+                gen = cast(str | None, await self.redis_client.get("categories:list:gen"))
+            except RedisError:
+                gen = 0
 
-        redis_key = self._redis_key_categories_list(
-            gen=int(gen) if gen else 0,
-            keys={"skip": skip, "limit": limit, "name": name},
-        )
+            redis_key = self._redis_key_categories_list(
+                gen=int(gen) if gen else 0,
+                keys={"skip": skip, "limit": limit, "name": name},
+            )
 
-        try:
-            cached_response = await self.redis_client.get(redis_key)
+            try:
+                cached_response = await self.redis_client.get(redis_key)
 
-            if cached_response:
-                # Parse la réponse JSON en objet Python
-                response_data = json.loads(cached_response)
+                if cached_response:
+                    # Parse la réponse JSON en objet Python
+                    response_data = json.loads(cached_response)
 
-                # Convertis les listes d'objets en Pydantic model
-                categories = [
-                    CategoryResponse.model_validate(cat) for cat in response_data["categories"]
-                ]
+                    # Convertis les listes d'objets en Pydantic model
+                    categories = [
+                        CategoryResponse.model_validate(cat) for cat in response_data["categories"]
+                    ]
 
-                return (categories, int(response_data["total"]))
-        except RedisError:
-            logger.warning("redis_unavailable", operation="get_list_categories", exc_info=True)
-        except (KeyError, TypeError, ValueError):
-            logger.warning("cache_corrupted", operation="get_list_categories", exc_info=True)
+                    return (categories, int(response_data["total"]))
+            except RedisError:
+                logger.warning("redis_unavailable", operation="get_list_categories", exc_info=True)
+            except (KeyError, TypeError, ValueError):
+                logger.warning("cache_corrupted", operation="get_list_categories", exc_info=True)
 
         categories = await self.repository.get_all(skip=skip, limit=limit, name=name)
         categories_resp = [CategoryResponse.model_validate(cat) for cat in categories]
         total = await self.repository.count(name=name)
 
-        try:
-            await self.redis_client.set(
-                redis_key,
-                json.dumps(
-                    {
-                        "categories": [cat.model_dump(mode="json") for cat in categories_resp],
-                        "total": total,
-                    }
-                ),
-                ex=REDIS_TTL,
-            )
-        except RedisError:
-            logger.warning("redis_unavailable", operation="set_list_categories", exc_info=True)
+        if name is None:
+            try:
+                await self.redis_client.set(
+                    redis_key, # pyrefly: ignore [unbound-name]
+                    json.dumps(
+                        {
+                            "categories": [cat.model_dump(mode="json") for cat in categories_resp],
+                            "total": total,
+                        }
+                    ),
+                    ex=REDIS_TTL,
+                )
+            except RedisError:
+                logger.warning("redis_unavailable", operation="set_list_categories", exc_info=True)
 
         return (categories_resp, total)
 
