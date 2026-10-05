@@ -58,11 +58,11 @@ def _get_request_id(request: Request) -> str:
 @app.middleware("http")
 async def rate_limit(request: Request, call_next):
     user_id = None
-    auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Bearer "):
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
         try:
-            jwt_token = decode_access_token(auth_header.removeprefix("Bearer "))
-            user_id = jwt_token.get("sub")
+            payload = decode_access_token(auth_header.removeprefix("Bearer "))
+            user_id = payload.get("sub")
         except jwt.PyJWTError:
             pass
 
@@ -81,8 +81,7 @@ async def rate_limit(request: Request, call_next):
             content={"detail": "Trop de requêtes, veuillez réessayer plus tard."},
         )
 
-    response = await call_next(request)
-    return response
+    return await call_next(request)
 
 
 @app.middleware("http")
