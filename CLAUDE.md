@@ -150,6 +150,7 @@ Rules, all deliberate:
 - **No reuse detection.** Replaying a rotated token just returns 401; it does not revoke the current one.
 - `/refresh` re-checks that the user still exists and is active, and returns the same 401 message for every failure.
 - `/logout` requires a valid access token and deletes all three keys.
+- **Changing your password revokes the session too.** `PATCH /users/me/password` calls `revoke_session`, once the password update succeeds.
 - SHA-256 rather than Argon2 because the token is high-entropy and must be looked up by its hash. `hash_redis_key` (MD5) is a different thing: it only shortens cache keys and has no security role.
 
 **Roles** — `is_admin`/`is_active` are not settable through `PATCH /users/{id}` (`UserUpdate` has no such fields; Pydantic drops them silently). They change only through `PATCH /users/{id}/active` and `.../admin`, both admin-only and backed by dedicated repository methods (`set_active`/`set_admin`). Both refuse to deactivate or demote the last usable admin, counted as `count(is_admin=True, is_active=True) == 1` — the `is_active=True` part matters, otherwise already-deactivated admins would be counted as available.

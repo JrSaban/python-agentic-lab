@@ -10,9 +10,6 @@ lives in the README's Features section and in `CLAUDE.md`, not here.
 
 1. **Security audit follow-ups.** Small fixes from the 2026-10-02 security audit, one branch
    each, in this order. Remove a line when its PR merges, and the whole item with the last one.
-   - `fix/revoke-sessions-on-password-change` — `PATCH /users/me/password` revokes the user's
-     refresh token, forcing a new login. The revocation becomes a reusable `AuthService` method
-     (shared with `logout`), called from the `users` router.
    - `fix/constant-time-login` — `POST /login` runs Argon2 against a dummy hash when the email
      is unknown, so the response time no longer reveals whether an account exists. `POST /users`
      still answers 409 for a taken email; that part stays a known limitation.
