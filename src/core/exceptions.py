@@ -2,9 +2,17 @@
 
 
 class AppBaseError(Exception):
-    """Base class for all exceptions in the application."""
+    """Base class for all exceptions in the application.
+
+    `headers` are added to the HTTP response by the exception handler in `main.py`
+    (e.g. `Retry-After` on a 429).
+    """
 
     status_code: int = 500
+
+    def __init__(self, message: str = "", headers: dict[str, str] | None = None) -> None:
+        super().__init__(message)
+        self.headers = headers
 
 
 class NotFoundError(AppBaseError):
