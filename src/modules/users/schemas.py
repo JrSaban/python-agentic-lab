@@ -82,7 +82,7 @@ class UserSelfEmailUpdate(UserEmailUpdate):
 
 
 class UserPasswordUpdate(BaseModel):
-    """Payload reçu lors d'un PATCH /users/{id}/password."""
+    """Payload reçu lors d'un PATCH /users/me/password."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
