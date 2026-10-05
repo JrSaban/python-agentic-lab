@@ -4,6 +4,7 @@ import fakeredis
 from httpx import AsyncClient, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import settings
 from src.modules.users.repository import UserRepository
 
 
@@ -69,6 +70,112 @@ async def test_login_inactive_account_returns_401(
         "/api/v1/login", json={"email": "test@gmail.com", "password": "password"}
     )
     assert response.status_code == 401
+
+
+async def test_login_rate_limit_blocks_after_max_attempts(client: AsyncClient) -> None:
+    """Wrong password repeated up to LOGIN_RATE_LIMIT_MAX_ATTEMPTS times still returns 401;
+    the next attempt is blocked with 429."""
+    await register_user(client)
+
+    for _ in range(settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS):
+        response = await client.post(
+            "/api/v1/login", json={"email": "test@gmail.com", "password": "wrong_password"}
+        )
+        assert response.status_code == 401
+
+    response = await client.post(
+        "/api/v1/login", json={"email": "test@gmail.com", "password": "wrong_password"}
+    )
+    assert response.status_code == 429
+
+
+async def test_login_success_never_counts_toward_rate_limit(client: AsyncClient) -> None:
+    """Successful logins never increment the rate limit counters, no matter how many
+    in a row."""
+    await register_user(client)
+
+    for _ in range(settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS + 2):
+        response = await client.post(
+            "/api/v1/login", json={"email": "test@gmail.com", "password": "password"}
+        )
+        assert response.status_code == 200
+
+
+async def test_login_rate_limit_not_reset_by_a_successful_login(client: AsyncClient) -> None:
+    """A successful login in between failures does not reset the failure counter:
+    failures keep accumulating across it."""
+    await register_user(client)
+
+    async def fail() -> Response:
+        return await client.post(
+            "/api/v1/login", json={"email": "test@gmail.com", "password": "wrong_password"}
+        )
+
+    assert (await fail()).status_code == 401
+    assert (await fail()).status_code == 401
+
+    success = await client.post(
+        "/api/v1/login", json={"email": "test@gmail.com", "password": "password"}
+    )
+    assert success.status_code == 200
+
+    assert (await fail()).status_code == 401
+    assert (await fail()).status_code == 401
+    assert (await fail()).status_code == 401  # 5th failure overall
+
+    assert (await fail()).status_code == 429
+
+
+async def test_login_rate_limit_blocked_by_ip_with_a_fresh_email(
+    client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """The IP counter alone, already at the threshold, is enough to block — even for
+    an email that has never failed before."""
+    await register_user(client)
+    await redis_client.set(
+        "rate_limit:login:ip:127.0.0.1", str(settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS)
+    )
+
+    response = await client.post(
+        "/api/v1/login", json={"email": "test@gmail.com", "password": "password"}
+    )
+    assert response.status_code == 429
+
+
+async def test_login_rate_limit_blocked_by_email_with_a_fresh_ip(
+    client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """The email counter alone, already at the threshold, is enough to block — even
+    though the IP counter is untouched."""
+    await register_user(client)
+    await redis_client.set(
+        "rate_limit:login:email:test@gmail.com", str(settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS)
+    )
+
+    response = await client.post(
+        "/api/v1/login", json={"email": "test@gmail.com", "password": "password"}
+    )
+    assert response.status_code == 429
+
+
+async def test_login_rate_limit_window_is_fixed_not_sliding(
+    client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """The TTL is set on the first failed attempt and never pushed back by later ones
+    within the same window — a fixed window, not a sliding one."""
+    await register_user(client)
+
+    await client.post(
+        "/api/v1/login", json={"email": "test@gmail.com", "password": "wrong_password"}
+    )
+    first_ttl = await redis_client.ttl("rate_limit:login:email:test@gmail.com")
+    assert first_ttl > 0
+
+    await client.post(
+        "/api/v1/login", json={"email": "test@gmail.com", "password": "wrong_password"}
+    )
+    second_ttl = await redis_client.ttl("rate_limit:login:email:test@gmail.com")
+    assert second_ttl <= first_ttl
 
 
 async def test_refresh_success(client: AsyncClient) -> None:
