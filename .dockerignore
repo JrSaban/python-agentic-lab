@@ -1,0 +1,23 @@
+# Secrets — never bake these into an image
+.env
+.env.*
+!.env.example
+
+# Version control
+.git
+.gitignore
+
+# Local virtualenv
+.venv
+
+# Python bytecode/cache
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Editor/OS cruft
+.vscode/
+.idea/
+.DS_Store
+.claude/
