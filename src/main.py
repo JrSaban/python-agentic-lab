@@ -1,6 +1,7 @@
 import time
 import uuid
 
+import jwt
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -10,6 +11,9 @@ from src.core.exceptions import (
     AppBaseError,
 )
 from src.core.logging import setup_logging
+from src.core.rate_limit import increment_rate_limit
+from src.core.redis import get_redis_client
+from src.core.security import decode_access_token
 from src.modules.auth.router import router as auth_router
 from src.modules.categories.router import router as categories_router
 from src.modules.todos.router import router as todos_router
@@ -49,6 +53,36 @@ def _get_request_id(request: Request) -> str:
     if incoming and len(incoming) <= 64:
         return incoming
     return str(uuid.uuid4())
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    user_id = None
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        try:
+            jwt_token = decode_access_token(auth_header.removeprefix("Bearer "))
+            user_id = jwt_token.get("sub")
+        except jwt.PyJWTError:
+            pass
+
+    if user_id is None:
+        client_ip = request.client.host if request.client else "unknown"
+        key = f"rate_limit:general:ip:{client_ip}"
+    else:
+        key = f"rate_limit:general:user:{user_id}"
+
+    attempts = await increment_rate_limit(
+        get_redis_client(), [key], settings.GENERAL_RATE_LIMIT_WINDOW_MINUTES
+    )
+    if attempts[key] > settings.GENERAL_RATE_LIMIT_MAX_REQUESTS:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Trop de requêtes, veuillez réessayer plus tard."},
+        )
+
+    response = await call_next(request)
+    return response
 
 
 @app.middleware("http")

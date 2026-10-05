@@ -14,10 +14,12 @@ async def is_rate_limited(redis_client: Redis, keys: list[str], max_attempts: in
     return False
 
 
-async def increment_rate_limit(redis_client: Redis, keys: list[str], window_minutes: int) -> dict[str, int]:
+async def increment_rate_limit(
+    redis_client: Redis, keys: list[str], window_minutes: int
+) -> dict[str, int]:
     """Increment the rate limit for the given keys."""
     all_attemps = {}
-    
+
     for key in keys:
         attemps = await redis_client.incr(key)
         if attemps == 1:
