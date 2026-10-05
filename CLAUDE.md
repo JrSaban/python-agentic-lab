@@ -92,7 +92,7 @@ Services return ORM models and the router serializes them through `response_mode
 | `config.py` | `pydantic-settings`, reads `.env`. |
 | `exceptions.py` | `NotFoundError` → 404, `ConflictError` → 409, `ForbiddenError` → 403, `UnauthorizedError` → 401. Generic, not per-resource; each has an `@app.exception_handler` in `main.py`. |
 | `repository.py` | `BaseRepository` (below). |
-| `schemas.py` | `PaginatedResponse[T]`. |
+| `schemas.py` | `PaginatedResponse[T]` and `LimitQuery`. |
 | `security.py` | Argon2 password hashing, JWT access tokens, refresh-token generation and hashing. |
 | `redis.py` | The shared async client (`decode_responses=True`, so values come back as `str`), the `get_redis_client` dependency, and `hash_redis_key`. |
 | `logging.py` | `structlog` setup. |
@@ -205,7 +205,7 @@ So `categories/schemas.py` must never import from `todos/schemas.py`, and `todos
 
 `GET /todos/{id}` takes an `include` query param and declares `response_model=TodoResponse | TodoDetailResponse`; the handler builds the right one explicitly with `.model_validate(...)`, since FastAPI can't choose a union member itself. The repository method takes a matching `with_<relation>: bool = False` flag that adds a `selectinload`.
 
-List endpoints return `PaginatedResponse[T]`: the service returns `(items, total)` and the router builds the envelope. Multi-value filters on a many-to-many field (`category_ids`) use OR semantics. Free-text filters use `ilike` with `Query(min_length=2)` so a one-character search can't match everything, and escape `%`/`_` (`BaseRepository.escape_ilike_value`) so a literal one in the search term isn't read as a SQL wildcard.
+List endpoints return `PaginatedResponse[T]`: the service returns `(items, total)` and the router builds the envelope. Their `limit` is typed `LimitQuery` (`src/core/schemas.py`): only 10, 25, 50 or 100 are accepted, default 25 — a new list endpoint must use it rather than its own `ge`/`le` bounds. Multi-value filters on a many-to-many field (`category_ids`) use OR semantics, and `category_ids` is capped at 20 IDs. Free-text filters use `ilike` with `Query(min_length=2)` so a one-character search can't match everything, and escape `%`/`_` (`BaseRepository.escape_ilike_value`) so a literal one in the search term isn't read as a SQL wildcard.
 
 ### Logging and request IDs
 
