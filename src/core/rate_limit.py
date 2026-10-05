@@ -5,6 +5,16 @@ from typing import cast
 from redis.asyncio import Redis
 
 
+async def seconds_until_reset(redis_client: Redis, key: str) -> int:
+    """Remaining TTL of a rate limit counter, in seconds, for the Retry-After header.
+
+    Never less than 1: a counter without TTL (-1) or already gone (-2) still means
+    the client should wait before retrying, not retry immediately.
+    """
+    ttl = await redis_client.ttl(key)
+    return max(ttl, 1)
+
+
 async def is_rate_limited(redis_client: Redis, keys: list[str], max_attempts: int) -> bool:
     """Check if the rate limit has been reached for any of the given keys."""
     for key in keys:
