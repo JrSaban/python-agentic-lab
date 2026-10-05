@@ -30,7 +30,7 @@ from src.modules.users.service import UserService
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-def _rate_limit_redis_keys(user_id: int) -> str:
+def _rate_limit_redis_key(user_id: int) -> str:
     return f"rate_limit:sensitive_actions:user:{user_id}"
 
 
@@ -46,7 +46,7 @@ async def check_sensitive_action_rate_limit(
     current_user: CurrentUserDep,
     redis_client: Annotated[Redis, Depends(get_redis_client)],
 ) -> None:
-    key = _rate_limit_redis_keys(current_user.id)
+    key = _rate_limit_redis_key(current_user.id)
     if await is_rate_limited(redis_client, [key], settings.SENSITIVE_RATE_LIMIT_MAX_ATTEMPTS):
         raise TooManyRequestsError("Trop de tentatives, veuillez réessayer plus tard.")
 
@@ -173,7 +173,7 @@ async def update_email(
             data=data,
         )
     except ForbiddenError:
-        key = _rate_limit_redis_keys(current_user.id)
+        key = _rate_limit_redis_key(current_user.id)
         await increment_rate_limit(
             redis_client, [key], settings.SENSITIVE_RATE_LIMIT_WINDOW_MINUTES
         )
@@ -206,7 +206,7 @@ async def update_password(
             data=data,
         )
     except ForbiddenError:
-        key = _rate_limit_redis_keys(current_user.id)
+        key = _rate_limit_redis_key(current_user.id)
         await increment_rate_limit(
             redis_client, [key], settings.SENSITIVE_RATE_LIMIT_WINDOW_MINUTES
         )
