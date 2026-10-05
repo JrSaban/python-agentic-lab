@@ -5,6 +5,7 @@ import jwt
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from redis.exceptions import RedisError
 
 from src.core.config import settings
 from src.core.exceptions import (
@@ -75,14 +76,18 @@ async def rate_limit(request: Request, call_next):
         return await call_next(request)
 
     key = f"rate_limit:general:{_rate_limit_identity(request)}"
-    attempts = await increment_rate_limit(
-        get_redis_client(), [key], settings.GENERAL_RATE_LIMIT_WINDOW_MINUTES
-    )
-    if attempts[key] > settings.GENERAL_RATE_LIMIT_MAX_REQUESTS:
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "Trop de requêtes, veuillez réessayer plus tard."},
+
+    try:
+        attempts = await increment_rate_limit(
+            get_redis_client(), [key], settings.GENERAL_RATE_LIMIT_WINDOW_MINUTES
         )
+        if attempts[key] > settings.GENERAL_RATE_LIMIT_MAX_REQUESTS:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Trop de requêtes, veuillez réessayer plus tard."},
+            )
+    except RedisError:
+        logger.warning("redis_unavailable", operation="rate_limit_middleware", exc_info=True)
 
     return await call_next(request)
 
