@@ -122,7 +122,7 @@ async def update_category(
     "/{category_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Supprimer une catégorie.",
-    description="Supprime définitivement une catégorie de la base de données.",
+    description="Supprime une catégorie de la base de données.",
 )
 async def delete_category(
     service: CategoryServiceDep,

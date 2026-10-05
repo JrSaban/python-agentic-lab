@@ -120,7 +120,7 @@ async def update_todo(
     "/{todo_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Supprimer une tâche",
-    description="Supprime définitivement une tâche de la base de données.",
+    description="Supprime une tâche de la base de données.",
 )
 async def delete_todo(
     service: TodoServiceDep,
