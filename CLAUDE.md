@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-FastAPI To-Do List API built with a Clean Architecture layering, used as a learning project: the author is an experienced PHP/Laravel developer learning Python/FastAPI/SQLAlchemy by building it. Python 3.12, managed with `uv`. PostgreSQL is the database; Redis is both the category cache and the refresh-token store.
+FastAPI To-Do List API built with a Clean Architecture layering, used as a learning project: the author is an experienced PHP/Laravel developer learning Python/FastAPI/SQLAlchemy by building it. Python 3.12, managed with `uv`. PostgreSQL is the database; Redis holds the category cache, the refresh tokens and the rate-limit counters.
 
 Language conventions, all deliberate:
 
@@ -48,7 +48,7 @@ uv run alembic upgrade head
 
 ## Tests
 
-Integration tests (`tests/test_*.py`) go through the full FastAPI stack with the `client` fixture, which overrides two dependencies: `get_db_session` (in-memory SQLite via `aiosqlite`, tables created and dropped around every test) and `get_redis_client` (a per-test `fakeredis.FakeAsyncRedis`, exposed as the `redis_client` fixture so a test can inspect or seed keys directly). Unit tests (`tests/unit/`) isolate one `*Service` by passing `AsyncMock` for its repositories and its Redis client; the module-level functions of `src/core/security.py` are called directly by services rather than injected, so they are patched at the import site: `@patch("src.modules.<module>.service.<function_name>")`.
+Integration tests (`tests/test_*.py`) go through the full FastAPI stack with the `client` fixture, which overrides two dependencies: `get_db_session` (in-memory SQLite via `aiosqlite`, tables created and dropped around every test) and `get_redis_client` (a per-test `fakeredis.FakeAsyncRedis`, exposed as the `redis_client` fixture so a test can inspect or seed keys directly). The rate-limit middleware calls `get_redis_client()` itself, outside dependency injection, so `dependency_overrides` doesn't reach it: the `client` fixture also monkeypatches `src.core.redis.redis_client` with the same fake. Every test starts with an empty fake, hence fresh rate-limit counters. Unit tests (`tests/unit/`) isolate one `*Service` by passing `AsyncMock` for its repositories and its Redis client; the module-level functions of `src/core/security.py` are called directly by services rather than injected, so they are patched at the import site: `@patch("src.modules.<module>.service.<function_name>")`.
 
 Which kind to write:
 
@@ -90,12 +90,13 @@ Services return ORM models and the router serializes them through `response_mode
 |---|---|
 | `database.py` | Async engine, `Base` (declares `id` — no model repeats it), `get_db_session`: **one transaction per request**, committed after the handler returns, rolled back on any exception. Repositories only `flush()`. |
 | `config.py` | `pydantic-settings`, reads `.env`. |
-| `exceptions.py` | `NotFoundError` → 404, `ConflictError` → 409, `ForbiddenError` → 403, `UnauthorizedError` → 401. Generic, not per-resource; each has an `@app.exception_handler` in `main.py`. |
+| `exceptions.py` | `AppBaseError` and its subclasses, generic rather than per-resource, each carrying its `status_code`. A single `@app.exception_handler(AppBaseError)` in `main.py` handles them all, so a new error type is just a subclass with a `status_code`. |
 | `repository.py` | `BaseRepository` (below). |
 | `schemas.py` | `PaginatedResponse[T]` and `LimitQuery`. |
 | `security.py` | Argon2 password hashing, JWT access tokens, refresh-token generation and hashing. |
 | `redis.py` | The shared async client (`decode_responses=True`, so values come back as `str`), the `get_redis_client` dependency, and `hash_redis_key`. |
 | `logging.py` | `structlog` setup. |
+| `rate_limit.py` | `is_rate_limited` / `increment_rate_limit`, the Redis counters behind every rate limit (see below). |
 
 ### Generic repository layer
 
@@ -186,7 +187,7 @@ categories:list:gen                      → integer generation counter         
 - **A `name` search is never cached**, read or written — each distinct search term would otherwise mint its own cache entry forever, with no bound on how many. `skip` also has an upper bound for the same reason.
 - **List invalidation is by generation.** A list can be cached under any combination of `skip`/`limit`, so instead of finding and deleting those keys, every create/update/delete does `INCR categories:list:gen`. Old entries become unreachable and expire on their own.
 - **Item invalidation** is a `DEL category:<id>` on update and delete.
-- **Redis is optional at runtime.** Every cache read, write and invalidation catches `RedisError` (and, on reads, an unparsable payload), logs a warning (`redis_unavailable` / `cache_corrupted`) and falls back to the database. A cache problem must never turn into a 5xx. This applies to the cache only: the refresh-token store has no fallback, and auth fails if Redis is down.
+- **The cache tolerates a Redis outage.** Every cache read, write and invalidation catches `RedisError` (and, on reads, an unparsable payload), logs a warning (`redis_unavailable` / `cache_corrupted`) and falls back to the database. A cache problem must never turn into a 5xx. This applies to the cache only: the refresh-token store and the rate limits have no fallback.
 - `get_category_or_404` is the **uncached** read. Use it for anything that then mutates the row or needs an ORM instance (`update_category`, `delete_category`, the existence check of `GET /categories/{id}/todos`); only `GET /categories/{id}` uses `get_category_cached`.
 
 ### Cross-module relationships
@@ -205,7 +206,22 @@ So `categories/schemas.py` must never import from `todos/schemas.py`, and `todos
 
 `GET /todos/{id}` takes an `include` query param and declares `response_model=TodoResponse | TodoDetailResponse`; the handler builds the right one explicitly with `.model_validate(...)`, since FastAPI can't choose a union member itself. The repository method takes a matching `with_<relation>: bool = False` flag that adds a `selectinload`.
 
-List endpoints return `PaginatedResponse[T]`: the service returns `(items, total)` and the router builds the envelope. Their `limit` is typed `LimitQuery` (`src/core/schemas.py`): only 10, 25, 50 or 100 are accepted, default 25 — a new list endpoint must use it rather than its own `ge`/`le` bounds. Multi-value filters on a many-to-many field (`category_ids`) use OR semantics, and `category_ids` is capped at 20 IDs. Free-text filters use `ilike` with `Query(min_length=2)` so a one-character search can't match everything, and escape `%`/`_` (`BaseRepository.escape_ilike_value`) so a literal one in the search term isn't read as a SQL wildcard.
+List endpoints return `PaginatedResponse[T]`: the service returns `(items, total)` and the router builds the envelope. Their `limit` is typed `LimitQuery` (`src/core/schemas.py`): only 10, 25, 50 or 100 are accepted, default 25. A new list endpoint must use `LimitQuery` rather than its own `ge`/`le` bounds. Multi-value filters on a many-to-many field (`category_ids`) use OR semantics, and `category_ids` is capped at 20 IDs. Free-text filters use `ilike` with `Query(min_length=2)` so a one-character search can't match everything, and escape `%`/`_` (`BaseRepository.escape_ilike_value`) so a literal one in the search term isn't read as a SQL wildcard.
+
+### Rate limiting
+
+Three independent limits, all fixed-window counters in Redis (`INCR`, with the TTL set when the counter is created), all answering 429. Thresholds and windows are settings (`*_RATE_LIMIT_*` in `config.py` and `.env.example`).
+
+| Limit | Where | Counted per | What counts |
+|---|---|---|---|
+| **General** | `rate_limit` middleware in `main.py` | user ID from a valid access token, else client IP | every request |
+| **Login** | `POST /login` | client IP **and** email, separately — either one blocks | failed logins only |
+| **Sensitive actions** | `PATCH /users/me/email` and `/me/password` | user, one counter shared by both routes | wrong current password only |
+
+- **The login and sensitive-action limits live in the router, not the service.** A dependency (`RateLimitLoginDep`, `SensitiveActionRateLimitDep`) checks the counter before the handler runs; the handler catches the service's exception (`UnauthorizedError` / `ForbiddenError`), increments, and re-raises. Services stay unaware of rate limiting. A new limited action follows the same shape.
+- **Only failures count** on login and sensitive actions, so a legitimate user isn't throttled by succeeding. A successful login does **not** reset the login counters.
+- **The general limit is a middleware**, because it covers every route. It reads the user ID straight from the JWT signature, with no database call; an invalid or expired token falls back to the IP instead of failing. It returns its 429 as a `JSONResponse` itself rather than raising `TooManyRequestsError`.
+- **`log_requests` must stay declared after `rate_limit` in `main.py`**, so that a 429 from the general limit is still logged and still carries `X-Request-ID`. `test_blocked_request_still_carries_request_id` checks it.
 
 ### Logging and request IDs
 
