@@ -34,3 +34,10 @@ lives in the README's Features section and in `CLAUDE.md`, not here.
    failures. Read the real client IP from `X-Forwarded-For`, but only for requests coming from a
    trusted proxy — otherwise any client could choose its own IP. Only matters once the API is
    deployed behind one.
+9. **Atomic attempt limits.** The login and sensitive-action limits read the counter before the
+   attempt and increment it only after a failure, so requests sent in parallel all read a
+   counter still under the threshold and all get through: 40 parallel logins gave 40 × 401 and
+   no 429. An attacker gets up to ~100 tries per IP per window (the general limit's ceiling)
+   instead of 5. Fix: reserve the attempt first with `INCR`, which is atomic in Redis, and decide
+   on the value it returns, before checking the password. To decide when doing it: whether a
+   successful attempt is decremented afterwards or simply counts.
