@@ -91,6 +91,22 @@ async def test_login_rate_limit_blocks_after_max_attempts(client: AsyncClient) -
     assert 0 < int(response.headers["Retry-After"]) <= window_seconds
 
 
+async def test_login_retry_after_is_the_longest_blocking_wait(
+    client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """When both the IP and the email counters are blocking, Retry-After is the longer
+    of the two TTLs: retrying after the shorter one would still be blocked."""
+    blocked = str(settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS)
+    await redis_client.set("rate_limit:login:ip:127.0.0.1", blocked, ex=300)
+    await redis_client.set("rate_limit:login:email:test@gmail.com", blocked, ex=1500)
+
+    response = await client.post(
+        "/api/v1/login", json={"email": "test@gmail.com", "password": "wrong_password"}
+    )
+    assert response.status_code == 429
+    assert int(response.headers["Retry-After"]) > 300
+
+
 async def test_login_success_never_counts_toward_rate_limit(client: AsyncClient) -> None:
     """Successful logins never increment the rate limit counters, no matter how many
     in a row."""
