@@ -1,15 +1,16 @@
 """Routing & Controller Layer pour le domaine Auth."""
 
-from typing import Annotated
+from typing import Annotated, cast
 
 import jwt
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import settings
 from src.core.database import get_db_session
-from src.core.exceptions import UnauthorizedError
+from src.core.exceptions import TooManyRequestsError, UnauthorizedError
 from src.core.redis import get_redis_client
 from src.core.security import decode_access_token
 from src.modules.auth.schemas import LoginRequest, RefreshTokenRequest, TokenResponse
@@ -53,9 +54,30 @@ def get_auth_service(
     return AuthService(user_repository=user_repository, redis_client=redis_client)
 
 
+async def check_login_rate_limit(
+    request: Request,
+    data: LoginRequest,
+    redis_client: Annotated[Redis, Depends(get_redis_client)],
+) -> None:
+    client_ip = request.client.host if request.client else "unknown"
+    email = data.email
+
+    ip_key = f"rate_limit:login:ip:{client_ip}"
+    email_key = f"rate_limit:login:email:{email}"
+
+    ip_attemps = cast(str | None, await redis_client.get(ip_key))
+    email_attemps = cast(str | None, await redis_client.get(email_key))
+
+    if (ip_attemps is not None and int(ip_attemps) >= settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS) or (
+        email_attemps is not None and int(email_attemps) >= settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS
+    ):
+        raise TooManyRequestsError("Trop de tentatives, veuillez réessayer plus tard.")
+
+
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 # Type alias pour injection propre et lisible (standard Python moderne)
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+RateLimitLoginDep = Annotated[None, Depends(check_login_rate_limit)]
 
 
 @router.post(
@@ -66,6 +88,7 @@ AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 )
 async def login(
     service: AuthServiceDep,
+    rate_limit: RateLimitLoginDep,
     data: LoginRequest,
 ) -> TokenResponse:
     return await service.login(data)
