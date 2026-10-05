@@ -22,8 +22,7 @@ async def increment_rate_limit(
 
     for key in keys:
         attemps = await redis_client.incr(key)
-        if attemps == 1:
-            await redis_client.expire(key, 60 * window_minutes)
+        await redis_client.expire(key, 60 * window_minutes, nx=True)
         all_attemps[key] = attemps
 
     return all_attemps
