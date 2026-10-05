@@ -2,6 +2,7 @@
 
 from httpx import AsyncClient
 
+from src.core.config import settings
 from src.modules.users.models import User
 
 # --- create_user ---
@@ -444,6 +445,72 @@ async def test_update_password_failure_does_not_revoke_refresh_token(
         "/api/v1/refresh", json={"refresh_token": refresh_token}
     )
     assert refresh_response.status_code == 200
+
+
+# --- sensitive action rate limit (update_email / update_password) ---
+
+
+async def test_sensitive_action_rate_limit_blocks_after_max_attempts(
+    authenticated_client: AsyncClient,
+) -> None:
+    """Wrong old_password repeated up to SENSITIVE_RATE_LIMIT_MAX_ATTEMPTS times on
+    /me/password still returns 403; the next attempt is blocked with 429."""
+    for _ in range(settings.SENSITIVE_RATE_LIMIT_MAX_ATTEMPTS):
+        response = await authenticated_client.patch(
+            "/api/v1/users/me/password",
+            json={
+                "new_password": "new_password",
+                "old_password": "wrong_password",
+                "confirm_new_password": "new_password",
+            },
+        )
+        assert response.status_code == 403
+
+    response = await authenticated_client.patch(
+        "/api/v1/users/me/password",
+        json={
+            "new_password": "new_password",
+            "old_password": "wrong_password",
+            "confirm_new_password": "new_password",
+        },
+    )
+    assert response.status_code == 429
+
+
+async def test_sensitive_action_rate_limit_shared_between_email_and_password(
+    authenticated_client: AsyncClient,
+) -> None:
+    """Failures on /me/email and /me/password share the same counter: exhausting it
+    on one endpoint blocks the other, even with an otherwise-correct password."""
+    for _ in range(settings.SENSITIVE_RATE_LIMIT_MAX_ATTEMPTS):
+        response = await authenticated_client.patch(
+            "/api/v1/users/me/email",
+            json={"new_email": "new@test.com", "current_password": "wrong_password"},
+        )
+        assert response.status_code == 403
+
+    response = await authenticated_client.patch(
+        "/api/v1/users/me/password",
+        json={
+            "new_password": "new_password",
+            "old_password": "secret123",
+            "confirm_new_password": "new_password",
+        },
+    )
+    assert response.status_code == 429
+
+
+async def test_sensitive_action_rate_limit_not_triggered_by_repeated_success(
+    authenticated_client: AsyncClient,
+) -> None:
+    """Successful email changes never increment the counter, no matter how many
+    in a row."""
+    for i in range(settings.SENSITIVE_RATE_LIMIT_MAX_ATTEMPTS + 2):
+        response = await authenticated_client.patch(
+            "/api/v1/users/me/email",
+            json={"new_email": f"new{i}@test.com", "current_password": "secret123"},
+        )
+        assert response.status_code == 200
 
 
 # --- set_user_email ---
