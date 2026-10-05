@@ -1,6 +1,6 @@
 """Routing & Controller Layer pour le domaine Auth."""
 
-from typing import Annotated, cast
+from typing import Annotated
 
 import jwt
 from fastapi import APIRouter, Depends, Request
@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.core.database import get_db_session
 from src.core.exceptions import TooManyRequestsError, UnauthorizedError
+from src.core.rate_limit import increment_rate_limit, is_rate_limited
 from src.core.redis import get_redis_client
 from src.core.security import decode_access_token
 from src.modules.auth.schemas import LoginRequest, RefreshTokenRequest, TokenResponse
@@ -70,11 +71,8 @@ async def check_login_rate_limit(
 ) -> None:
     ip_key, email_key = _rate_limit_redis_keys(request, data.email)
 
-    ip_attemps = cast(str | None, await redis_client.get(ip_key))
-    email_attemps = cast(str | None, await redis_client.get(email_key))
-
-    if (ip_attemps is not None and int(ip_attemps) >= settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS) or (
-        email_attemps is not None and int(email_attemps) >= settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS
+    if await is_rate_limited(
+        redis_client, [ip_key, email_key], settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS
     ):
         raise TooManyRequestsError("Trop de tentatives, veuillez réessayer plus tard.")
 
@@ -102,15 +100,9 @@ async def login(
         return await service.login(data)
     except UnauthorizedError:
         ip_key, email_key = _rate_limit_redis_keys(request, data.email)
-
-        ip_attemps = await redis_client.incr(ip_key)
-        email_attemps = await redis_client.incr(email_key)
-
-        if ip_attemps == 1:
-            await redis_client.expire(ip_key, 60 * settings.LOGIN_RATE_LIMIT_WINDOW_MINUTES)
-        if email_attemps == 1:
-            await redis_client.expire(email_key, 60 * settings.LOGIN_RATE_LIMIT_WINDOW_MINUTES)
-
+        await increment_rate_limit(
+            redis_client, [ip_key, email_key], settings.LOGIN_RATE_LIMIT_WINDOW_MINUTES
+        )
         raise
 
 
