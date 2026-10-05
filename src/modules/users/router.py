@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_session
-from src.core.schemas import PaginatedResponse
+from src.core.schemas import LimitQuery, PaginatedResponse
 from src.modules.auth.router import AuthServiceDep, CurrentUserDep
 from src.modules.users.models import User
 from src.modules.users.repository import UserRepository
@@ -64,7 +64,7 @@ async def list_users(
     service: UserServiceDep,
     current_user: CurrentUserDep,
     skip: Annotated[int, Query(ge=0, description="Nombre d'éléments à sauter")] = 0,
-    limit: Annotated[int, Query(ge=1, le=100, description="Nombre max d'éléments")] = 50,
+    limit: LimitQuery = 25,
     email: Annotated[str | None, Query(min_length=2, description="Filtre sur l'email")] = None,
     name: Annotated[str | None, Query(min_length=2, description="Filtre sur le nom")] = None,
     pseudo: Annotated[str | None, Query(min_length=2, description="Filtre sur le pseudo")] = None,

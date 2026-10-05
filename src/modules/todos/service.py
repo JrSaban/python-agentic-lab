@@ -22,7 +22,7 @@ class TodoService:
         self,
         current_user: User,
         skip: int = 0,
-        limit: int = 100,
+        limit: int = 25,
         title: str | None = None,
         is_completed: bool | None = None,
         category_ids: list[int] | None = None,

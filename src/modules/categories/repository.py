@@ -19,7 +19,7 @@ class CategoryRepository(BaseRepository[Category]):
         super().__init__(session, Category)
 
     async def get_all(
-        self, skip: int = 0, limit: int = 100, name: str | None = None
+        self, skip: int = 0, limit: int = 25, name: str | None = None
     ) -> Sequence[Category]:
         """Récupère une liste paginée de catégories."""
         query = select(Category).order_by(Category.name.asc())

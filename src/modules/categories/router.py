@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_session
 from src.core.redis import get_redis_client
-from src.core.schemas import PaginatedResponse
+from src.core.schemas import LimitQuery, PaginatedResponse
 from src.modules.auth.router import CurrentUserDep
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
@@ -45,7 +45,7 @@ async def list_categories(
     service: CategoryServiceDep,
     current_user: CurrentUserDep,
     skip: Annotated[int, Query(ge=0, le=2000, description="Nombre d'éléments à sauter")] = 0,
-    limit: Annotated[int, Query(ge=1, le=100, description="Nombre max d'éléments")] = 50,
+    limit: LimitQuery = 25,
     name: Annotated[str | None, Query(min_length=2, description="Filtre sur le nom")] = None,
 ) -> PaginatedResponse[CategoryResponse]:
     categories, total = await service.list_categories(skip=skip, limit=limit, name=name)
@@ -93,7 +93,7 @@ async def list_todos_by_category(
     current_user: CurrentUserDep,
     category_id: int,
     skip: Annotated[int, Query(ge=0, description="Nombre d'éléments à sauter")] = 0,
-    limit: Annotated[int, Query(ge=1, le=100, description="Nombre max d'éléments")] = 50,
+    limit: LimitQuery = 25,
 ) -> PaginatedResponse[TodoResponse]:
     """Récupère toutes les tâches associées à une catégorie."""
     await service.get_category_or_404(category_id)

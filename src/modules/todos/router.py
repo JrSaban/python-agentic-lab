@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_session
-from src.core.schemas import PaginatedResponse
+from src.core.schemas import LimitQuery, PaginatedResponse
 from src.modules.auth.router import CurrentUserDep
 from src.modules.categories.repository import CategoryRepository
 from src.modules.todos.models import Todo
@@ -43,7 +43,7 @@ async def list_todos(
     service: TodoServiceDep,
     current_user: CurrentUserDep,
     skip: Annotated[int, Query(ge=0, description="Nombre d'éléments à sauter")] = 0,
-    limit: Annotated[int, Query(ge=1, le=100, description="Nombre max d'éléments")] = 50,
+    limit: LimitQuery = 25,
     title: Annotated[str | None, Query(min_length=2, description="Filtre sur le titre")] = None,
     is_completed: Annotated[
         bool | None, Query(description="Filtre sur le statut de complétion")

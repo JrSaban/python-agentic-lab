@@ -23,7 +23,7 @@ class TodoRepository(BaseRepository[Todo]):
     async def get_all(
         self,
         skip: int = 0,
-        limit: int = 100,
+        limit: int = 25,
         owner_id: int | None = None,
         title: str | None = None,
         is_completed: bool | None = None,

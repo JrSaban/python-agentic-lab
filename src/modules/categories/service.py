@@ -58,7 +58,7 @@ class CategoryService:
             logger.warning("redis_unavailable", operation="invalidate_cache", exc_info=True)
 
     async def list_categories(
-        self, skip: int = 0, limit: int = 100, name: str | None = None
+        self, skip: int = 0, limit: int = 25, name: str | None = None
     ) -> tuple[Sequence[CategoryResponse], int]:
         """Fetch all categories with pagination."""
         if name is not None:

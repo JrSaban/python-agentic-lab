@@ -25,7 +25,7 @@ class UserService:
         self,
         current_user: User,
         skip: int = 0,
-        limit: int = 100,
+        limit: int = 25,
         email: str | None = None,
         name: str | None = None,
         pseudo: str | None = None,
