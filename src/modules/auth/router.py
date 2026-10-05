@@ -23,6 +23,15 @@ router = APIRouter(tags=["Auth"])
 bearer_scheme = HTTPBearer()
 
 
+def _rate_limit_keys(request: Request, email: str) -> tuple[str, str]:
+    """Get the rate limit keys for a request and email."""
+    client_ip = request.client.host if request.client else "unknown"
+    ip_key = f"rate_limit:login:ip:{client_ip}"
+    email_key = f"rate_limit:login:email:{email}"
+
+    return ip_key, email_key
+
+
 # Dependency pour injecter l'utilisateur connecté
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)],
@@ -59,11 +68,7 @@ async def check_login_rate_limit(
     data: LoginRequest,
     redis_client: Annotated[Redis, Depends(get_redis_client)],
 ) -> None:
-    client_ip = request.client.host if request.client else "unknown"
-    email = data.email
-
-    ip_key = f"rate_limit:login:ip:{client_ip}"
-    email_key = f"rate_limit:login:email:{email}"
+    ip_key, email_key = _rate_limit_keys(request, data.email)
 
     ip_attemps = cast(str | None, await redis_client.get(ip_key))
     email_attemps = cast(str | None, await redis_client.get(email_key))
@@ -88,10 +93,25 @@ RateLimitLoginDep = Annotated[None, Depends(check_login_rate_limit)]
 )
 async def login(
     service: AuthServiceDep,
+    request: Request,
     rate_limit: RateLimitLoginDep,
+    redis_client: Annotated[Redis, Depends(get_redis_client)],
     data: LoginRequest,
 ) -> TokenResponse:
-    return await service.login(data)
+    try:
+        return await service.login(data)
+    except UnauthorizedError:
+        ip_key, email_key = _rate_limit_keys(request, data.email)
+
+        ip_attemps = await redis_client.incr(ip_key)
+        email_attemps = await redis_client.incr(email_key)
+
+        if ip_attemps == 1:
+            await redis_client.expire(ip_key, 60 * settings.LOGIN_RATE_LIMIT_WINDOW_MINUTES)
+        if email_attemps == 1:
+            await redis_client.expire(email_key, 60 * settings.LOGIN_RATE_LIMIT_WINDOW_MINUTES)
+
+        raise
 
 
 @router.post(
