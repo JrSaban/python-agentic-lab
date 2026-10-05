@@ -23,6 +23,7 @@ class TodoCreate(TodoBase):
 
     category_ids: list[int] = Field(
         default=[],
+        max_length=20,
         description="Liste des identifiants de catégories associées à la tâche",
     )
 
@@ -39,6 +40,7 @@ class TodoUpdate(BaseModel):
     is_completed: bool | None = None
     category_ids: list[int] | None = Field(
         default=None,
+        max_length=20,
         description="Liste des identifiants de catégories associées à la tâche",
     )
 
