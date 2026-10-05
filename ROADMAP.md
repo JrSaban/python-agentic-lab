@@ -27,3 +27,10 @@ lives in the README's Features section and in `CLAUDE.md`, not here.
 6. **Audit log.** Who changed what, when, and whether it was a human or an agent — meaningful
    once there's more than one kind of actor writing to the API. Interacts with soft deletes, and must not depend on rows that pruning will eventually remove.
 7. **Evals for the MCP tools.** Not "does it work", but "does an agent actually use these tools correctly" — including the approval-gated one. Comes last, once the full tool surface exists.
+8. **Client IP behind a reverse proxy.** The rate limits identify anonymous clients by
+   `request.client.host`. Behind a reverse proxy (Nginx, a load balancer, a hosting platform),
+   that is the proxy's address, so every anonymous client would share one counter: a single busy
+   client would put everyone in 429, and the login IP counter would fill up with everyone's
+   failures. Read the real client IP from `X-Forwarded-For`, but only for requests coming from a
+   trusted proxy — otherwise any client could choose its own IP. Only matters once the API is
+   deployed behind one.
