@@ -5,35 +5,76 @@ from sqlalchemy.exc import IntegrityError
 
 from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from src.modules.users.models import User
-from src.modules.users.schemas import UserCreate, UserPasswordUpdate, UserUpdate
+from src.modules.users.schemas import (
+    UserCreate,
+    UserEmailUpdate,
+    UserPasswordUpdate,
+    UserSelfEmailUpdate,
+    UserUpdate,
+)
 from src.modules.users.service import UserService
 
+# --- list_users ---
 
-async def test_get_user_or_404_raises_when_not_found():
+
+async def test_list_users_by_admin_success():
     mock_user_repo = AsyncMock()
-    mock_user_repo.get_by_id.return_value = None
-    current_user = User(
+    service = UserService(repository=mock_user_repo)
+    admin_user = User(
         id=1,
-        email="[EMAIL_ADDRESS]",
+        email="test@gmail.com",
         first_name="John",
         last_name="Doe",
         is_active=True,
         is_admin=True,
     )
+    users = [admin_user]
+    total = 1
+    mock_user_repo.get_all.return_value = users
+    mock_user_repo.count.return_value = total
 
+    result = await service.list_users(admin_user)
+
+    assert result == (users, total)
+    mock_user_repo.get_all.assert_called_once_with(
+        skip=0,
+        limit=100,
+        email=None,
+        name=None,
+        pseudo=None,
+        is_active=None,
+        is_admin=None,
+    )
+    mock_user_repo.count.assert_called_once()
+
+
+async def test_list_users_by_no_admin_raises_forbidden_error():
+    mock_user_repo = AsyncMock()
     service = UserService(repository=mock_user_repo)
+    current_user = User(
+        id=1,
+        email="test@gmail.com",
+        first_name="John",
+        last_name="Doe",
+        is_active=True,
+        is_admin=False,
+    )
 
-    with pytest.raises(NotFoundError):
-        await service.get_user_or_404(current_user, 2)
+    with pytest.raises(ForbiddenError):
+        await service.list_users(current_user)
 
-    mock_user_repo.get_by_id.assert_called_once_with(2)
+    mock_user_repo.get_all.assert_not_called()
+    mock_user_repo.count.assert_not_called()
+
+
+# --- get_user_or_404 ---
 
 
 async def test_get_me_by_user_returns_current_user():
     mock_user_repo = AsyncMock()
     current_user = User(
         id=1,
-        email="[EMAIL_ADDRESS]",
+        email="test@gmail.com",
         first_name="John",
         last_name="Doe",
         is_active=True,
@@ -50,11 +91,31 @@ async def test_get_me_by_user_returns_current_user():
     mock_user_repo.get_by_id.assert_called_once_with(current_user.id)
 
 
+async def test_get_user_or_404_raises_when_not_found():
+    mock_user_repo = AsyncMock()
+    mock_user_repo.get_by_id.return_value = None
+    current_user = User(
+        id=1,
+        email="test@gmail.com",
+        first_name="John",
+        last_name="Doe",
+        is_active=True,
+        is_admin=True,
+    )
+
+    service = UserService(repository=mock_user_repo)
+
+    with pytest.raises(NotFoundError):
+        await service.get_user_or_404(current_user, 2)
+
+    mock_user_repo.get_by_id.assert_called_once_with(2)
+
+
 async def test_get_user_by_admin_user_returns_user():
     mock_user_repo = AsyncMock()
     admin_user = User(
         id=1,
-        email="[EMAIL_ADDRESS]",
+        email="admin@gmail.com",
         first_name="John",
         last_name="Doe",
         is_active=True,
@@ -63,7 +124,7 @@ async def test_get_user_by_admin_user_returns_user():
     )
     fake_user = User(
         id=2,
-        email="[EMAIL_ADDRESS]",
+        email="jane@gmail.com",
         first_name="Jane",
         last_name="Doe",
         is_active=True,
@@ -86,7 +147,7 @@ async def test_get_user_by_no_admin_user_raises_forbidden_error():
     mock_user_repo = AsyncMock()
     current_user = User(
         id=1,
-        email="[EMAIL_ADDRESS]",
+        email="test@gmail.com",
         first_name="John",
         last_name="Doe",
         is_active=True,
@@ -103,6 +164,9 @@ async def test_get_user_by_no_admin_user_raises_forbidden_error():
     assert not current_user.is_admin
     assert current_user.id != fake_user_id
     mock_user_repo.get_by_id.assert_not_called()
+
+
+# --- create_user ---
 
 
 @patch("src.modules.users.service.hash_password", return_value="hashedpassword")
@@ -174,6 +238,26 @@ async def test_create_user_with_existing_pseudo_raises_conflict_error(mock_hash_
         await service.create_user(user_data)
 
     mock_user_repo.create.assert_called_once_with(user_data, "hashedpassword")
+
+
+async def test_create_user_with_unrelated_integrity_error_reraises():
+    mock_user_repo = AsyncMock()
+    service = UserService(repository=mock_user_repo)
+    user_data = UserCreate(
+        email="test@gmail.com",
+        first_name="John",
+        last_name="Doe",
+        password="password",
+        confirm_password="password",
+    )
+    mock_user_repo.create.side_effect = IntegrityError(
+        "stmt", {}, Exception("some other constraint")
+    )
+    with pytest.raises(IntegrityError):
+        await service.create_user(user_data)
+
+
+# --- update_user ---
 
 
 async def test_update_user_success():
@@ -281,34 +365,6 @@ async def test_update_user_by_no_admin_raises_forbidden_error():
     mock_user_repo.update.assert_not_called()
 
 
-async def test_update_user_with_existing_email_raises_conflict_error():
-    mock_user_repo = AsyncMock()
-    service = UserService(repository=mock_user_repo)
-    current_user = User(
-        id=1,
-        email="test@gmail.com",
-        first_name="John",
-        last_name="Doe",
-        is_active=True,
-        is_admin=False,
-    )
-    user_data = UserUpdate(
-        email="jane@gmail.com",
-        first_name="Jane",
-        last_name="Paul",
-    )
-    mock_user_repo.get_by_id.return_value = current_user
-    mock_user_repo.update.side_effect = IntegrityError(
-        "stmt", {}, Exception("uq_users_email_lower")
-    )
-
-    with pytest.raises(ConflictError):
-        await service.update_user(current_user, current_user.id, user_data)
-
-    mock_user_repo.get_by_id.assert_called_once_with(current_user.id)
-    mock_user_repo.update.assert_called_once_with(current_user, user_data)
-
-
 async def test_update_user_with_existing_pseudo_raises_conflict_error():
     mock_user_repo = AsyncMock()
     service = UserService(repository=mock_user_repo)
@@ -331,6 +387,92 @@ async def test_update_user_with_existing_pseudo_raises_conflict_error():
 
     mock_user_repo.get_by_id.assert_called_once_with(current_user.id)
     mock_user_repo.update.assert_called_once_with(current_user, user_data)
+
+
+# --- update_email ---
+
+
+@patch("src.modules.users.service.verify_password", return_value=True)
+async def test_update_email_success(mock_verify_password):
+    mock_user_repo = AsyncMock()
+    service = UserService(repository=mock_user_repo)
+    current_user = User(
+        id=1,
+        email="old@gmail.com",
+        first_name="John",
+        last_name="Doe",
+        is_active=True,
+        is_admin=False,
+        hashed_password="hashed_password",
+    )
+    user_data = UserSelfEmailUpdate(new_email="new@gmail.com", current_password="password")
+    updated_user = User(
+        id=1,
+        email="new@gmail.com",
+        first_name="John",
+        last_name="Doe",
+        is_active=True,
+        is_admin=False,
+        hashed_password="hashed_password",
+    )
+    mock_user_repo.update_email.return_value = updated_user
+
+    result = await service.update_email(current_user, user_data)
+
+    assert result == updated_user
+    mock_verify_password.assert_called_once_with(
+        user_data.current_password, current_user.hashed_password
+    )
+    mock_user_repo.update_email.assert_called_once_with(current_user, user_data.new_email)
+
+
+@patch("src.modules.users.service.verify_password", return_value=False)
+async def test_update_email_with_incorrect_password_raises_forbidden_error(mock_verify_password):
+    mock_user_repo = AsyncMock()
+    service = UserService(repository=mock_user_repo)
+    current_user = User(
+        id=1,
+        email="old@gmail.com",
+        first_name="John",
+        last_name="Doe",
+        is_active=True,
+        is_admin=False,
+        hashed_password="hashed_password",
+    )
+    user_data = UserSelfEmailUpdate(new_email="new@gmail.com", current_password="wrong_password")
+
+    with pytest.raises(ForbiddenError):
+        await service.update_email(current_user, user_data)
+
+    mock_verify_password.assert_called_once_with(
+        user_data.current_password, current_user.hashed_password
+    )
+    mock_user_repo.update_email.assert_not_called()
+
+
+@patch("src.modules.users.service.verify_password", return_value=True)
+async def test_update_email_with_existing_email_raises_conflict_error(mock_verify_password):
+    mock_user_repo = AsyncMock()
+    service = UserService(repository=mock_user_repo)
+    current_user = User(
+        id=1,
+        email="old@gmail.com",
+        first_name="John",
+        last_name="Doe",
+        is_active=True,
+        is_admin=False,
+        hashed_password="hashed_password",
+    )
+    user_data = UserSelfEmailUpdate(new_email="taken@gmail.com", current_password="password")
+    mock_user_repo.update_email.side_effect = IntegrityError(
+        "stmt", {}, Exception("uq_users_email_lower")
+    )
+
+    with pytest.raises(ConflictError):
+        await service.update_email(current_user, user_data)
+
+
+# --- update_password ---
 
 
 @patch("src.modules.users.service.hash_password", return_value="hashed_new_password")
@@ -410,54 +552,119 @@ async def test_update_password_with_incorrect_old_password_raises_forbidden_erro
     mock_user_repo.update_password.assert_not_called()
 
 
-async def test_list_users_by_admin_success():
+# --- set_user_email ---
+
+
+async def test_set_user_email_by_admin_success():
     mock_user_repo = AsyncMock()
     service = UserService(repository=mock_user_repo)
     admin_user = User(
         id=1,
-        email="test@gmail.com",
-        first_name="John",
-        last_name="Doe",
+        email="admin@gmail.com",
+        first_name="Admin",
+        last_name="User",
         is_active=True,
         is_admin=True,
     )
-    users = [admin_user]
-    total = 1
-    mock_user_repo.get_all.return_value = users
-    mock_user_repo.count.return_value = total
-
-    result = await service.list_users(admin_user)
-
-    assert result == (users, total)
-    mock_user_repo.get_all.assert_called_once_with(
-        skip=0,
-        limit=100,
-        email=None,
-        name=None,
-        pseudo=None,
-        is_active=None,
-        is_admin=None,
+    target_user = User(
+        id=2,
+        email="old@gmail.com",
+        first_name="Target",
+        last_name="User",
+        is_active=True,
+        is_admin=False,
     )
-    mock_user_repo.count.assert_called_once()
+    updated_user = User(
+        id=2,
+        email="new@gmail.com",
+        first_name="Target",
+        last_name="User",
+        is_active=True,
+        is_admin=False,
+    )
+    user_data = UserEmailUpdate(new_email="new@gmail.com")
+    mock_user_repo.get_by_id.return_value = target_user
+    mock_user_repo.update_email.return_value = updated_user
+
+    result = await service.set_user_email(admin_user, target_user.id, user_data)
+
+    assert result == updated_user
+    mock_user_repo.get_by_id.assert_called_once_with(target_user.id)
+    mock_user_repo.update_email.assert_called_once_with(target_user, user_data.new_email)
 
 
-async def test_list_users_by_no_admin_raises_forbidden_error():
+async def test_set_user_email_by_non_admin_raises_forbidden_error():
     mock_user_repo = AsyncMock()
     service = UserService(repository=mock_user_repo)
-    current_user = User(
+    regular_user = User(
         id=1,
-        email="test@gmail.com",
+        email="user@gmail.com",
         first_name="John",
         last_name="Doe",
         is_active=True,
         is_admin=False,
     )
+    user_data = UserEmailUpdate(new_email="new@gmail.com")
 
     with pytest.raises(ForbiddenError):
-        await service.list_users(current_user)
+        await service.set_user_email(regular_user, 2, user_data)
 
-    mock_user_repo.get_all.assert_not_called()
-    mock_user_repo.count.assert_not_called()
+    mock_user_repo.get_by_id.assert_not_called()
+    mock_user_repo.update_email.assert_not_called()
+
+
+async def test_set_user_email_on_own_id_raises_forbidden_error():
+    """An admin can't use this admin-only route on their own id — they must go
+    through /me/email with their password instead."""
+    mock_user_repo = AsyncMock()
+    service = UserService(repository=mock_user_repo)
+    admin_user = User(
+        id=1,
+        email="admin@gmail.com",
+        first_name="Admin",
+        last_name="User",
+        is_active=True,
+        is_admin=True,
+    )
+    user_data = UserEmailUpdate(new_email="new@gmail.com")
+
+    with pytest.raises(ForbiddenError):
+        await service.set_user_email(admin_user, admin_user.id, user_data)
+
+    mock_user_repo.get_by_id.assert_not_called()
+    mock_user_repo.update_email.assert_not_called()
+
+
+async def test_set_user_email_with_existing_email_raises_conflict_error():
+    mock_user_repo = AsyncMock()
+    service = UserService(repository=mock_user_repo)
+    admin_user = User(
+        id=1,
+        email="admin@gmail.com",
+        first_name="Admin",
+        last_name="User",
+        is_active=True,
+        is_admin=True,
+    )
+    target_user = User(
+        id=2,
+        email="old@gmail.com",
+        first_name="Target",
+        last_name="User",
+        is_active=True,
+        is_admin=False,
+    )
+    user_data = UserEmailUpdate(new_email="taken@gmail.com")
+    mock_user_repo.get_by_id.return_value = target_user
+    mock_user_repo.update_email.side_effect = IntegrityError(
+        "stmt", {}, Exception("uq_users_email_lower")
+    )
+
+    with pytest.raises(ConflictError):
+        await service.set_user_email(admin_user, target_user.id, user_data)
+
+
+# --- set_user_active ---
 
 
 async def test_set_user_active_success():
@@ -544,6 +751,9 @@ async def test_set_user_inactive_last_admin_raises_forbidden_error():
     mock_user_repo.set_active.assert_not_called()
 
 
+# --- set_user_admin ---
+
+
 async def test_set_user_admin_success():
     mock_user_repo = AsyncMock()
     service = UserService(repository=mock_user_repo)
@@ -626,20 +836,3 @@ async def test_set_user_no_admin_last_admin_raises_forbidden_error():
     mock_user_repo.get_by_id.assert_called_once_with(admin_user.id)
     mock_user_repo.count.assert_called_once_with(is_admin=True, is_active=True)
     mock_user_repo.set_admin.assert_not_called()
-
-
-async def test_create_user_with_unrelated_integrity_error_reraises():
-    mock_user_repo = AsyncMock()
-    service = UserService(repository=mock_user_repo)
-    user_data = UserCreate(
-        email="test@gmail.com",
-        first_name="John",
-        last_name="Doe",
-        password="password",
-        confirm_password="password",
-    )
-    mock_user_repo.create.side_effect = IntegrityError(
-        "stmt", {}, Exception("some other constraint")
-    )
-    with pytest.raises(IntegrityError):
-        await service.create_user(user_data)

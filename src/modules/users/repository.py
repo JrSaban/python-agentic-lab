@@ -71,6 +71,16 @@ class UserRepository(BaseRepository[User]):
 
         return user
 
+    async def update_email(self, user: User, email: str) -> User:
+        """Update an existing user's email."""
+        user.email = email
+
+        self.session.add(user)
+        await self.session.flush()
+        await self.session.refresh(user)
+
+        return user
+
     async def set_active(self, user: User, is_active: bool) -> User:
         """Set an user's active status"""
         user.is_active = is_active

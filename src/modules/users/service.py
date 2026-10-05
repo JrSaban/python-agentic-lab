@@ -8,7 +8,13 @@ from src.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from src.core.security import hash_password, verify_password
 from src.modules.users.models import User
 from src.modules.users.repository import UserRepository
-from src.modules.users.schemas import UserCreate, UserPasswordUpdate, UserUpdate
+from src.modules.users.schemas import (
+    UserCreate,
+    UserEmailUpdate,
+    UserPasswordUpdate,
+    UserSelfEmailUpdate,
+    UserUpdate,
+)
 
 
 class UserService:
@@ -80,11 +86,23 @@ class UserService:
         try:
             return await self.repository.update(user, data)
         except IntegrityError as e:
-            if "uq_users_email_lower" in str(e):
-                raise ConflictError(f"Un utilisateur avec l'email {data.email} existe déjà.") from e
             if "uq_users_pseudo_lower" in str(e):
                 raise ConflictError(
                     f"Un utilisateur avec le pseudo {data.pseudo} existe déjà."
+                ) from e
+            raise
+
+    async def update_email(self, current_user: User, data: UserSelfEmailUpdate) -> User:
+        """Update email of a user."""
+        if not verify_password(data.current_password, current_user.hashed_password):
+            raise ForbiddenError("Le mot de passe actuel ne correspond pas")
+
+        try:
+            return await self.repository.update_email(current_user, data.new_email)
+        except IntegrityError as e:
+            if "uq_users_email_lower" in str(e):
+                raise ConflictError(
+                    f"Un utilisateur avec l'email {data.new_email} existe déjà."
                 ) from e
             raise
 
@@ -96,10 +114,28 @@ class UserService:
         hashed_password = hash_password(data.new_password)
         return await self.repository.update_password(current_user, hashed_password)
 
+    async def set_user_email(
+        self, current_user: User, entity_id: int, data: UserEmailUpdate
+    ) -> User:
+        """Set an user's email."""
+        if not current_user.is_admin or current_user.id == entity_id:
+            raise ForbiddenError("Vous n'avez pas l'autorisation de modifier cet utilisateur.")
+
+        user = await self.get_user_or_404(current_user, entity_id)
+
+        try:
+            return await self.repository.update_email(user, data.new_email)
+        except IntegrityError as e:
+            if "uq_users_email_lower" in str(e):
+                raise ConflictError(
+                    f"Un utilisateur avec l'email {data.new_email} existe déjà."
+                ) from e
+            raise
+
     async def set_user_active(self, current_user: User, entity_id: int, is_active: bool) -> User:
         """Set an user's active status."""
         if not current_user.is_admin:
-            raise ForbiddenError("Vous n'avez pas l'autorisation de modifier ce user.")
+            raise ForbiddenError("Vous n'avez pas l'autorisation de modifier cet utilisateur.")
 
         user = await self.get_user_or_404(current_user, entity_id)
 
@@ -113,7 +149,7 @@ class UserService:
     async def set_user_admin(self, current_user: User, entity_id: int, is_admin: bool) -> User:
         """Set an user's admin status."""
         if not current_user.is_admin:
-            raise ForbiddenError("Vous n'avez pas l'autorisation de modifier ce user.")
+            raise ForbiddenError("Vous n'avez pas l'autorisation de modifier cet utilisateur.")
 
         user = await self.get_user_or_404(current_user, entity_id)
 
