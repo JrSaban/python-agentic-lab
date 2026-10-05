@@ -55,23 +55,23 @@ def _get_request_id(request: Request) -> str:
     return str(uuid.uuid4())
 
 
-@app.middleware("http")
-async def rate_limit(request: Request, call_next):
-    user_id = None
+def _rate_limit_identity(request: Request) -> str:
+    """User id from a valid access token, else the client IP."""
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         try:
             payload = decode_access_token(auth_header.removeprefix("Bearer "))
-            user_id = payload.get("sub")
         except jwt.PyJWTError:
-            pass
+            payload = {}
+        if user_id := payload.get("sub"):
+            return f"user:{user_id}"
 
-    if user_id is None:
-        client_ip = request.client.host if request.client else "unknown"
-        key = f"rate_limit:general:ip:{client_ip}"
-    else:
-        key = f"rate_limit:general:user:{user_id}"
+    return f"ip:{request.client.host if request.client else 'unknown'}"
 
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    key = f"rate_limit:general:{_rate_limit_identity(request)}"
     attempts = await increment_rate_limit(
         get_redis_client(), [key], settings.GENERAL_RATE_LIMIT_WINDOW_MINUTES
     )
