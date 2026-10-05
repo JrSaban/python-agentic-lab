@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT_WINDOW_MINUTES: int = 30
     SENSITIVE_RATE_LIMIT_MAX_ATTEMPTS: int = 5
     SENSITIVE_RATE_LIMIT_WINDOW_MINUTES: int = 30
+    GENERAL_RATE_LIMIT_MAX_REQUESTS: int = 100
+    GENERAL_RATE_LIMIT_WINDOW_MINUTES: int = 1
 
     @field_validator("JWT_SECRET_KEY")
     @classmethod

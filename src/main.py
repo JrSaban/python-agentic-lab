@@ -1,15 +1,20 @@
 import time
 import uuid
 
+import jwt
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from redis.exceptions import RedisError
 
 from src.core.config import settings
 from src.core.exceptions import (
     AppBaseError,
 )
 from src.core.logging import setup_logging
+from src.core.rate_limit import increment_rate_limit
+from src.core.redis import get_redis_client
+from src.core.security import decode_access_token
 from src.modules.auth.router import router as auth_router
 from src.modules.categories.router import router as categories_router
 from src.modules.todos.router import router as todos_router
@@ -49,6 +54,42 @@ def _get_request_id(request: Request) -> str:
     if incoming and len(incoming) <= 64:
         return incoming
     return str(uuid.uuid4())
+
+
+def _rate_limit_identity(request: Request) -> str:
+    """User id from a valid access token, else the client IP."""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            payload = decode_access_token(auth_header.removeprefix("Bearer "))
+        except jwt.PyJWTError:
+            payload = {}
+        if user_id := payload.get("sub"):
+            return f"user:{user_id}"
+
+    return f"ip:{request.client.host if request.client else 'unknown'}"
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    if request.url.path == "/health":
+        return await call_next(request)
+
+    key = f"rate_limit:general:{_rate_limit_identity(request)}"
+
+    try:
+        attempts = await increment_rate_limit(
+            get_redis_client(), [key], settings.GENERAL_RATE_LIMIT_WINDOW_MINUTES
+        )
+        if attempts[key] > settings.GENERAL_RATE_LIMIT_MAX_REQUESTS:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Trop de requêtes, veuillez réessayer plus tard."},
+            )
+    except RedisError:
+        logger.warning("redis_unavailable", operation="rate_limit_middleware", exc_info=True)
+
+    return await call_next(request)
 
 
 @app.middleware("http")
