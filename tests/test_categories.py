@@ -210,6 +210,30 @@ async def test_list_categories_filter_by_name(authenticated_client: AsyncClient)
     assert data["items"][1] == cat_1.json()
 
 
+async def test_list_categories_with_name_filter_is_never_cached(
+    authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """A name-filtered search is never cached at all — not stored, not read from,
+    no matter how many times it's repeated."""
+    await authenticated_client.post("/api/v1/categories", json={"name": "Sport"})
+    await authenticated_client.post("/api/v1/categories", json={"name": "House"})
+
+    await authenticated_client.get("/api/v1/categories?name=port")
+    await authenticated_client.get("/api/v1/categories?name=port")
+
+    keys = await redis_client.keys("categories:list:*")
+    assert keys == ["categories:list:gen"]
+
+
+async def test_list_categories_skip_too_large_returns_422(
+    authenticated_client: AsyncClient,
+) -> None:
+    """skip beyond the upper bound (2000) is rejected, so a client can't generate
+    unlimited cache keys by varying it."""
+    response = await authenticated_client.get("/api/v1/categories?skip=2001")
+    assert response.status_code == 422
+
+
 async def test_list_categories_without_token_returns_401(client: AsyncClient) -> None:
     """GET /categories with no Authorization header at all → 401."""
     response = await client.get("/api/v1/categories")
@@ -255,12 +279,13 @@ async def test_list_categories_is_served_from_cache(
 async def test_list_categories_different_filters_use_different_cache_entries(
     authenticated_client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
 ) -> None:
-    """Two GET /categories calls with different skip/limit/name produce two distinct
-    categories:list:* entries, not one overwriting the other."""
+    """Two GET /categories calls with different skip/limit produce two distinct
+    categories:list:* entries, not one overwriting the other. (name isn't part of
+    this: a name-filtered search is never cached at all — see the dedicated test.)"""
     await authenticated_client.post("/api/v1/categories", json={"name": "House"})
 
-    await authenticated_client.get("/api/v1/categories?name=port")
-    await authenticated_client.get("/api/v1/categories")
+    await authenticated_client.get("/api/v1/categories?limit=10")
+    await authenticated_client.get("/api/v1/categories?limit=20")
 
     gen = await redis_client.get("categories:list:gen")
     assert gen == "1"

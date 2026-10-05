@@ -49,7 +49,7 @@ async def list_todos(
         bool | None, Query(description="Filtre sur le statut de complétion")
     ] = None,
     category_ids: Annotated[
-        list[int] | None, Query(description="Filtre sur les catégories")
+        list[int] | None, Query(max_length=20, description="Filtre sur les catégories")
     ] = None,
 ) -> PaginatedResponse[TodoResponse]:
     todos, total = await service.list_todos(
