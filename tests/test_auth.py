@@ -87,6 +87,8 @@ async def test_login_rate_limit_blocks_after_max_attempts(client: AsyncClient) -
         "/api/v1/login", json={"email": "test@gmail.com", "password": "wrong_password"}
     )
     assert response.status_code == 429
+    window_seconds = 60 * settings.LOGIN_RATE_LIMIT_WINDOW_MINUTES
+    assert 0 < int(response.headers["Retry-After"]) <= window_seconds
 
 
 async def test_login_success_never_counts_toward_rate_limit(client: AsyncClient) -> None:

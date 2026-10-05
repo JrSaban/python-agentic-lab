@@ -475,6 +475,8 @@ async def test_sensitive_action_rate_limit_blocks_after_max_attempts(
         },
     )
     assert response.status_code == 429
+    window_seconds = 60 * settings.SENSITIVE_RATE_LIMIT_WINDOW_MINUTES
+    assert 0 < int(response.headers["Retry-After"]) <= window_seconds
 
 
 async def test_sensitive_action_rate_limit_shared_between_email_and_password(
