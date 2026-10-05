@@ -187,7 +187,7 @@ categories:list:gen                      → integer generation counter         
 - **A `name` search is never cached**, read or written — each distinct search term would otherwise mint its own cache entry forever, with no bound on how many. `skip` also has an upper bound for the same reason.
 - **List invalidation is by generation.** A list can be cached under any combination of `skip`/`limit`, so instead of finding and deleting those keys, every create/update/delete does `INCR categories:list:gen`. Old entries become unreachable and expire on their own.
 - **Item invalidation** is a `DEL category:<id>` on update and delete.
-- **The cache tolerates a Redis outage.** Every cache read, write and invalidation catches `RedisError` (and, on reads, an unparsable payload), logs a warning (`redis_unavailable` / `cache_corrupted`) and falls back to the database. A cache problem must never turn into a 5xx. This applies to the cache only: the refresh-token store and the rate limits have no fallback.
+- **The cache tolerates a Redis outage.** Every cache read, write and invalidation catches `RedisError` (and, on reads, an unparsable payload), logs a warning (`redis_unavailable` / `cache_corrupted`) and falls back to the database. A cache problem must never turn into a 5xx. The general rate limit does the same (see "Rate limiting"); the refresh-token store and the login/sensitive-action limits have no fallback.
 - `get_category_or_404` is the **uncached** read. Use it for anything that then mutates the row or needs an ORM instance (`update_category`, `delete_category`, the existence check of `GET /categories/{id}/todos`); only `GET /categories/{id}` uses `get_category_cached`.
 
 ### Cross-module relationships
@@ -214,13 +214,15 @@ Three independent limits, all fixed-window counters in Redis (`INCR`, with the T
 
 | Limit | Where | Counted per | What counts |
 |---|---|---|---|
-| **General** | `rate_limit` middleware in `main.py` | user ID from a valid access token, else client IP | every request |
+| **General** | `rate_limit` middleware in `main.py` | user ID from a valid access token, else client IP | every request except `GET /health` |
 | **Login** | `POST /login` | client IP **and** email, separately — either one blocks | failed logins only |
 | **Sensitive actions** | `PATCH /users/me/email` and `/me/password` | user, one counter shared by both routes | wrong current password only |
 
 - **The login and sensitive-action limits live in the router, not the service.** A dependency (`RateLimitLoginDep`, `SensitiveActionRateLimitDep`) checks the counter before the handler runs; the handler catches the service's exception (`UnauthorizedError` / `ForbiddenError`), increments, and re-raises. Services stay unaware of rate limiting. A new limited action follows the same shape.
 - **Only failures count** on login and sensitive actions, so a legitimate user isn't throttled by succeeding. A successful login does **not** reset the login counters.
 - **The general limit is a middleware**, because it covers every route. It reads the user ID straight from the JWT signature, with no database call; an invalid or expired token falls back to the IP instead of failing. It returns its 429 as a `JSONResponse` itself rather than raising `TooManyRequestsError`.
+- **The general limit fails open.** If Redis raises, the middleware logs `redis_unavailable` and lets the request through uncounted, instead of turning every request into a 500.
+- **`GET /health` is never counted**, so a monitoring probe can neither consume a quota nor get a 429.
 - **`log_requests` must stay declared after `rate_limit` in `main.py`**, so that a 429 from the general limit is still logged and still carries `X-Request-ID`. `test_blocked_request_still_carries_request_id` checks it.
 
 ### Logging and request IDs
