@@ -1,25 +1,37 @@
 """Exception handler."""
 
 
-class NotFoundError(Exception):
-    """Représente une ressource qui n'a pas été trouvée."""
+class AppBaseError(Exception):
+    """Base class for all exceptions in the application."""
 
-    pass
-
-
-class ConflictError(Exception):
-    """Représente une ressource qui entre en conflit avec une ressource existante."""
-
-    pass
+    status_code: int = 500
 
 
-class ForbiddenError(Exception):
-    """Représente une action non autorisée."""
+class NotFoundError(AppBaseError):
+    """Not found error. Represents a resource that was not found."""
 
-    pass
+    status_code = 404
 
 
-class UnauthorizedError(Exception):
-    """Représente une action non authentifiée."""
+class ConflictError(AppBaseError):
+    """Conflict error. Represents a resource that conflicts with an existing resource."""
 
-    pass
+    status_code = 409
+
+
+class ForbiddenError(AppBaseError):
+    """Forbidden error. Represents an action that is not allowed."""
+
+    status_code = 403
+
+
+class UnauthorizedError(AppBaseError):
+    """Unauthorized error. Represents an action that is not authenticated."""
+
+    status_code = 401
+
+
+class TooManyRequestsError(AppBaseError):
+    """Too many requests error."""
+
+    status_code = 429

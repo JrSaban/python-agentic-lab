@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     REFRESH_TOKEN_ABSOLUTE_MAX_DAYS: int = 90
 
+    # Rate limiting
+    LOGIN_RATE_LIMIT_MAX_ATTEMPTS: int = 5
+    LOGIN_RATE_LIMIT_WINDOW_MINUTES: int = 30
+
     @field_validator("JWT_SECRET_KEY")
     @classmethod
     def validate_jwt_secret_key(cls, v: str) -> str:
