@@ -71,6 +71,9 @@ def _rate_limit_identity(request: Request) -> str:
 
 @app.middleware("http")
 async def rate_limit(request: Request, call_next):
+    if request.url.path == "/health":
+        return await call_next(request)
+
     key = f"rate_limit:general:{_rate_limit_identity(request)}"
     attempts = await increment_rate_limit(
         get_redis_client(), [key], settings.GENERAL_RATE_LIMIT_WINDOW_MINUTES
