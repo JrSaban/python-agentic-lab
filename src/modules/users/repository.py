@@ -153,7 +153,9 @@ class UserRepository(BaseRepository[User]):
         )
 
         if name is not None:
+            escaped_name = self.escape_ilike_value(name)
             query = query.where(
-                User.first_name.ilike(f"%{name}%") | User.last_name.ilike(f"%{name}%")
+                User.first_name.ilike(f"%{escaped_name}%", escape="\\")
+                | User.last_name.ilike(f"%{escaped_name}%", escape="\\")
             )
         return query

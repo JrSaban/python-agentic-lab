@@ -115,6 +115,41 @@ async def test_list_users_as_admin_success(authenticated_admin: AsyncClient) -> 
     assert response.status_code == 200
 
 
+async def test_list_users_filter_by_name_escapes_wildcards(
+    authenticated_admin: AsyncClient,
+) -> None:
+    """The first_name/last_name search is built by hand (not through
+    BaseRepository._apply_filter_params), but still escapes % and _ literally."""
+    target = await authenticated_admin.post(
+        "/api/v1/users",
+        json={
+            "email": "a@test.com",
+            "first_name": "50%",
+            "last_name": "Doe",
+            "pseudo": "Target",
+            "password": "password",
+            "confirm_password": "password",
+        },
+    )
+    await authenticated_admin.post(
+        "/api/v1/users",
+        json={
+            "email": "b@test.com",
+            "first_name": "50X",
+            "last_name": "Doe",
+            "pseudo": "Other",
+            "password": "password",
+            "confirm_password": "password",
+        },
+    )
+
+    response = await authenticated_admin.get("/api/v1/users", params={"name": "50%"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["items"][0]["id"] == target.json()["id"]
+
+
 async def test_list_users_as_regular_user_returns_403(authenticated_client: AsyncClient) -> None:
     """A regular user cannot list users → 403."""
     response = await authenticated_client.get("/api/v1/users")
