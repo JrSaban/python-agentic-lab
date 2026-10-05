@@ -32,7 +32,7 @@ async def test_list_categories_falls_back_to_db_when_redis_get_fails():
 
     assert total == 1
     assert categories[0].name == "Sport"
-    mock_category_repo.get_all.assert_called_once_with(skip=0, limit=100, name=None)
+    mock_category_repo.get_all.assert_called_once_with(skip=0, limit=25, name=None)
 
 
 async def test_list_categories_falls_back_to_db_when_redis_set_fails():

@@ -38,7 +38,7 @@ async def test_list_users_by_admin_success():
     assert result == (users, total)
     mock_user_repo.get_all.assert_called_once_with(
         skip=0,
-        limit=100,
+        limit=25,
         email=None,
         name=None,
         pseudo=None,

@@ -308,7 +308,7 @@ async def test_list_categories_different_filters_use_different_cache_entries(
     await authenticated_client.post("/api/v1/categories", json={"name": "House"})
 
     await authenticated_client.get("/api/v1/categories?limit=10")
-    await authenticated_client.get("/api/v1/categories?limit=20")
+    await authenticated_client.get("/api/v1/categories?limit=25")
 
     gen = await redis_client.get("categories:list:gen")
     assert gen == "1"

@@ -3,7 +3,7 @@
 from typing import Annotated, Literal
 
 from fastapi import Query
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator
 
 
 class PaginatedResponse[T](BaseModel):
@@ -13,4 +13,8 @@ class PaginatedResponse[T](BaseModel):
     limit: int
 
 
-LimitQuery = Annotated[Literal[10, 25, 50, 100], Query(description="Nombre max d'éléments")]
+LimitQuery = Annotated[
+    Literal[10, 25, 50, 100],
+    BeforeValidator(int),
+    Query(description="Nombre max d'éléments"),
+]
