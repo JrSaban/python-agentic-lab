@@ -15,13 +15,13 @@ async def seconds_until_reset(redis_client: Redis, key: str) -> int:
     return max(ttl, 1)
 
 
-async def is_rate_limited(redis_client: Redis, keys: list[str], max_attempts: int) -> bool:
-    """Check if the rate limit has been reached for any of the given keys."""
+async def get_retry_after(redis_client: Redis, keys: list[str], max_attempts: int) -> int | None:
+    """Seconds to wait if any of the given keys has reached the limit, else None."""
     for key in keys:
         attempts = cast(str | None, await redis_client.get(key))
         if attempts is not None and int(attempts) >= max_attempts:
-            return True
-    return False
+            return await seconds_until_reset(redis_client, key)
+    return None
 
 
 async def increment_rate_limit(

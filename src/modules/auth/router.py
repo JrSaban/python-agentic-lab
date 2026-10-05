@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.core.database import get_db_session
 from src.core.exceptions import TooManyRequestsError, UnauthorizedError
-from src.core.rate_limit import increment_rate_limit, is_rate_limited
+from src.core.rate_limit import get_retry_after, increment_rate_limit
 from src.core.redis import get_redis_client
 from src.core.security import decode_access_token
 from src.modules.auth.schemas import LoginRequest, RefreshTokenRequest, TokenResponse
@@ -71,10 +71,14 @@ async def check_login_rate_limit(
 ) -> None:
     ip_key, email_key = _rate_limit_redis_keys(request, data.email)
 
-    if await is_rate_limited(
+    retry_after = await get_retry_after(
         redis_client, [ip_key, email_key], settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS
-    ):
-        raise TooManyRequestsError("Trop de tentatives, veuillez réessayer plus tard.")
+    )
+    if retry_after is not None:
+        raise TooManyRequestsError(
+            "Trop de tentatives, veuillez réessayer plus tard.",
+            headers={"Retry-After": str(retry_after)},
+        )
 
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
