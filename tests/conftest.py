@@ -70,7 +70,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
 @pytest.fixture
 async def client(
-    db_session: AsyncSession, redis_client: fakeredis.FakeAsyncRedis
+    db_session: AsyncSession,
+    redis_client: fakeredis.FakeAsyncRedis,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncGenerator[AsyncClient, None]:
     """
     Client HTTP asynchrone (httpx.AsyncClient).
@@ -87,6 +89,9 @@ async def client(
     # Surcharge les dépendances de FastAPI
     app.dependency_overrides[get_db_session] = override_get_db_session
     app.dependency_overrides[get_redis_client] = override_get_redis_client
+    # Les middlewares ne passent pas par dependency_overrides : ils appellent
+    # get_redis_client() directement, qui lit cet attribut du module.
+    monkeypatch.setattr("src.core.redis.redis_client", redis_client)
 
     # Crée le client de test
     transport = ASGITransport(app=app)
