@@ -23,7 +23,7 @@ A REST API for managing todos and categories, built with **FastAPI** and **Clean
 - **Role-based access control** — regular users vs. admins, with dedicated endpoints to promote/demote or (de)activate accounts (protected against locking out the last remaining admin)
 - **Ownership & permissions** — a todo is private to its owner (admins see everything); a category is visible to everyone but only its creator or an admin can edit it, and only an admin can delete it
 - **Todos ↔ Categories** — many-to-many relationship, with optional eager-loading (`?include=categories`) and filtering by category
-- **Pagination & filtering** — every list endpoint supports `skip`/`limit`, free-text search, and resource-specific filters (status, category, role, ...)
+- **Pagination & filtering** — every list endpoint supports `skip`/`limit` (page sizes of 10, 25, 50 or 100), free-text search, and resource-specific filters (status, category, role, ...)
 - **Soft deletes** on todos and categories — a deleted row stays in the database but is invisible to the API, like Laravel's `SoftDeletes`
 - **Redis caching** on category reads, invalidated on every write
 - **Structured logging** — one JSON line per request, correlated by an `X-Request-ID` header
@@ -38,7 +38,7 @@ A few decisions worth a second look if you're skimming the code:
 - **Refresh tokens are stored hashed and rotated atomically.** Redis only holds the SHA-256 of a token, never the token itself. Each `/refresh` consumes it with a single `GETDEL`, so the same token can't be exchanged twice, even by two requests arriving at the same time. Rotation alone would let an active session renew itself forever, so a separate, longer-lived marker caps the session's absolute lifetime regardless of activity. Changing your password or your email revokes it outright, the same way logging out does.
 - **Login takes the same time whether the email exists or not.** An unknown email still runs a full Argon2 verification, against a dummy hash computed once at startup, instead of short-circuiting — otherwise the response time alone would reveal which emails are registered, even behind an identical error message.
 - **A cache that never takes the API down.** Paginated category lists are invalidated with a generation counter (one `INCR` instead of hunting for every cached page). Every Redis call on the cache path is allowed to fail: the request falls back to PostgreSQL and logs a warning.
-- **Generic repository layer.** `BaseRepository[ModelT: Base]` (`src/core/repository.py`) uses Python 3.12's native generic syntax (`class Foo[T]`) to share `get_by_id`, `update`, `delete`, and pagination across `Todo`, `Category` and `User` repositories, while each resource keeps its own fully-typed filter parameters — no dynamic/untyped filter dicts.
+- **Generic repository layer.** `BaseRepository[ModelT: Base]` (`src/core/repository.py`) uses Python 3.12's native generic syntax (`class Foo[T]`) to share updates, pagination, counting and typed filtering across `Todo`, `Category` and `User` repositories, while each resource keeps its own fully-typed filter parameters — no dynamic/untyped filter dicts.
 - **Clean Architecture, enforced consistently.** Every module follows the same `router → service → repository → models` layering; services raise framework-agnostic exceptions (`NotFoundError`, `ForbiddenError`, ...) mapped to HTTP status codes in one place, never `HTTPException` scattered through the business logic.
 - **Tested at two levels.** Fast unit tests exercise each service in isolation with mocked repositories; integration tests run the full FastAPI stack against a real (in-memory) database. CI also applies every migration to a real PostgreSQL instance.
 
@@ -63,7 +63,7 @@ docker compose up -d --build                          # API on :8000, Postgres o
 docker compose exec api uv run alembic upgrade head   # create the tables
 ```
 
-Interactive API docs (Swagger UI) are available at [http://localhost:8000/docs](http://localhost:8000/docs).
+Interactive API docs (Swagger UI) are available at [http://localhost:8000/docs](http://localhost:8000/docs) when `DEBUG=True`, as in `.env.example`. They are off by default.
 
 <details>
 <summary>Running the API on the host</summary>
@@ -99,8 +99,10 @@ All routes are prefixed with `/api/v1`.
 | `POST` | `/users` | Register a new account |
 | `GET` | `/users/me` | Current user's profile |
 | `GET` | `/users` | List users *(admin only)* |
-| `GET` `PATCH` | `/users/{id}` | View / update a user |
-| `PATCH` | `/users/me/password` | Change your own password |
+| `GET` `PATCH` | `/users/{id}` | View / update a profile (yourself, or anyone as an admin) |
+| `PATCH` | `/users/me/password` | Change your own password *(logs you out)* |
+| `PATCH` | `/users/me/email` | Change your own email, current password required *(logs you out)* |
+| `PATCH` | `/users/{id}/email` | Change another user's email *(admin only, logs them out)* |
 | `PATCH` | `/users/{id}/active` `/admin` | (De)activate or promote a user *(admin only)* |
 | `GET` `POST` | `/todos` | List (own todos, or all for admins) / create a todo |
 | `GET` `PATCH` `DELETE` | `/todos/{id}` | View / update / delete a todo you own |
