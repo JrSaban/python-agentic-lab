@@ -96,7 +96,7 @@ Services return ORM models and the router serializes them through `response_mode
 | `security.py` | Argon2 password hashing, JWT access tokens, refresh-token generation and hashing. |
 | `redis.py` | The shared async client (`decode_responses=True`, so values come back as `str`), the `get_redis_client` dependency, and `hash_redis_key`. |
 | `logging.py` | `structlog` setup. |
-| `rate_limit.py` | `is_rate_limited` / `increment_rate_limit`, the Redis counters behind every rate limit (see below). |
+| `rate_limit.py` | `get_retry_after` / `increment_rate_limit` / `seconds_until_reset`, the Redis counters behind every rate limit (see below). |
 
 ### Generic repository layer
 
@@ -210,7 +210,10 @@ List endpoints return `PaginatedResponse[T]`: the service returns `(items, total
 
 ### Rate limiting
 
-Three independent limits, all fixed-window counters in Redis (`INCR`, with the TTL set when the counter is created), all answering 429. Thresholds and windows are settings (`*_RATE_LIMIT_*` in `config.py` and `.env.example`).
+Three independent limits, all fixed-window counters in Redis, all answering 429 with a `Retry-After` header. Thresholds and windows are settings (`*_RATE_LIMIT_*` in `config.py` and `.env.example`).
+
+- **The TTL is set with `EXPIRE ... NX` after every `INCR`**, not only when the counter is created. `NX` never pushes an existing TTL back, so the window stays fixed; but if setting it ever failed once, the next increment sets it, instead of leaving a counter that never expires and blocks forever.
+- **`Retry-After` is the blocking counter's remaining TTL**, in seconds (`seconds_until_reset`, never below 1). The middleware sets it on its own `JSONResponse`; the login and sensitive-action dependencies pass it through `TooManyRequestsError(..., headers=...)`, which the `AppBaseError` handler in `main.py` copies onto the response. Any other exception can carry headers the same way.
 
 | Limit | Where | Counted per | What counts |
 |---|---|---|---|

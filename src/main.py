@@ -12,7 +12,7 @@ from src.core.exceptions import (
     AppBaseError,
 )
 from src.core.logging import setup_logging
-from src.core.rate_limit import increment_rate_limit
+from src.core.rate_limit import increment_rate_limit, seconds_until_reset
 from src.core.redis import get_redis_client
 from src.core.security import decode_access_token
 from src.modules.auth.router import router as auth_router
@@ -82,9 +82,11 @@ async def rate_limit(request: Request, call_next):
             get_redis_client(), [key], settings.GENERAL_RATE_LIMIT_WINDOW_MINUTES
         )
         if attempts[key] > settings.GENERAL_RATE_LIMIT_MAX_REQUESTS:
+            retry_after = await seconds_until_reset(get_redis_client(), key)
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Trop de requêtes, veuillez réessayer plus tard."},
+                headers={"Retry-After": str(retry_after)},
             )
     except RedisError:
         logger.warning("redis_unavailable", operation="rate_limit_middleware", exc_info=True)
@@ -118,6 +120,7 @@ async def app_error_handler(request: Request, exc: AppBaseError) -> JSONResponse
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": str(exc)},
+        headers=exc.headers,
     )
 
 

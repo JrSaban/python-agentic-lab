@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.core.database import get_db_session
 from src.core.exceptions import ForbiddenError, TooManyRequestsError
-from src.core.rate_limit import increment_rate_limit, is_rate_limited
+from src.core.rate_limit import get_retry_after, increment_rate_limit
 from src.core.redis import get_redis_client
 from src.core.schemas import LimitQuery, PaginatedResponse
 from src.modules.auth.router import AuthServiceDep, CurrentUserDep
@@ -47,8 +47,14 @@ async def check_sensitive_action_rate_limit(
     redis_client: Annotated[Redis, Depends(get_redis_client)],
 ) -> None:
     key = _rate_limit_redis_key(current_user.id)
-    if await is_rate_limited(redis_client, [key], settings.SENSITIVE_RATE_LIMIT_MAX_ATTEMPTS):
-        raise TooManyRequestsError("Trop de tentatives, veuillez réessayer plus tard.")
+    retry_after = await get_retry_after(
+        redis_client, [key], settings.SENSITIVE_RATE_LIMIT_MAX_ATTEMPTS
+    )
+    if retry_after is not None:
+        raise TooManyRequestsError(
+            "Trop de tentatives, veuillez réessayer plus tard.",
+            headers={"Retry-After": str(retry_after)},
+        )
 
 
 # Type alias pour injection propre et lisible (standard Python moderne)

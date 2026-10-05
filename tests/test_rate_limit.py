@@ -37,6 +37,19 @@ async def test_request_over_the_limit_returns_429(
     assert response.status_code == 429
 
 
+async def test_blocked_request_carries_retry_after(
+    client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
+) -> None:
+    """A 429 tells the client how long to wait: Retry-After is the counter's remaining
+    TTL, in seconds, so it can never exceed the window."""
+    window_seconds = 60 * settings.GENERAL_RATE_LIMIT_WINDOW_MINUTES
+    await redis_client.set(IP_KEY, str(settings.GENERAL_RATE_LIMIT_MAX_REQUESTS), ex=window_seconds)
+
+    response = await client.get(COUNTED_PATH)
+    assert response.status_code == 429
+    assert 0 < int(response.headers["Retry-After"]) <= window_seconds
+
+
 async def test_blocked_request_still_carries_request_id(
     client: AsyncClient, redis_client: fakeredis.FakeAsyncRedis
 ) -> None:

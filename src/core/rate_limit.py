@@ -5,13 +5,28 @@ from typing import cast
 from redis.asyncio import Redis
 
 
-async def is_rate_limited(redis_client: Redis, keys: list[str], max_attempts: int) -> bool:
-    """Check if the rate limit has been reached for any of the given keys."""
+async def seconds_until_reset(redis_client: Redis, key: str) -> int:
+    """Remaining TTL of a rate limit counter, in seconds, for the Retry-After header.
+
+    Never less than 1: a counter without TTL (-1) or already gone (-2) still means
+    the client should wait before retrying, not retry immediately.
+    """
+    ttl = await redis_client.ttl(key)
+    return max(ttl, 1)
+
+
+async def get_retry_after(redis_client: Redis, keys: list[str], max_attempts: int) -> int | None:
+    """Seconds to wait if any of the given keys has reached the limit, else None.
+
+    When several keys are blocking (login: IP and email), the longest wait wins.
+    """
+    retry_after: int | None = None
     for key in keys:
         attempts = cast(str | None, await redis_client.get(key))
         if attempts is not None and int(attempts) >= max_attempts:
-            return True
-    return False
+            seconds = await seconds_until_reset(redis_client, key)
+            retry_after = seconds if retry_after is None else max(retry_after, seconds)
+    return retry_after
 
 
 async def increment_rate_limit(
