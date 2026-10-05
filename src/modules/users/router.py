@@ -3,9 +3,14 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import settings
 from src.core.database import get_db_session
+from src.core.exceptions import ForbiddenError, TooManyRequestsError
+from src.core.rate_limit import increment_rate_limit, is_rate_limited
+from src.core.redis import get_redis_client
 from src.core.schemas import LimitQuery, PaginatedResponse
 from src.modules.auth.router import AuthServiceDep, CurrentUserDep
 from src.modules.users.models import User
@@ -25,6 +30,10 @@ from src.modules.users.service import UserService
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
+def _rate_limit_redis_keys(user_id: int) -> str:
+    return f"rate_limit:sensitive_actions:user:{user_id}"
+
+
 # Factory de dépendance : instancie Repository et Service injectés par requête
 def get_user_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -33,8 +42,18 @@ def get_user_service(
     return UserService(repository)
 
 
+async def check_sensitive_action_rate_limit(
+    current_user: CurrentUserDep,
+    redis_client: Annotated[Redis, Depends(get_redis_client)],
+) -> None:
+    key = _rate_limit_redis_keys(current_user.id)
+    if await is_rate_limited(redis_client, [key], settings.SENSITIVE_RATE_LIMIT_MAX_ATTEMPTS):
+        raise TooManyRequestsError("Trop de tentatives, veuillez réessayer plus tard.")
+
+
 # Type alias pour injection propre et lisible (standard Python moderne)
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+SensitiveActionRateLimitDep = Annotated[None, Depends(check_sensitive_action_rate_limit)]
 
 
 @router.post(
@@ -144,12 +163,22 @@ async def update_email(
     service: UserServiceDep,
     auth_service: AuthServiceDep,
     current_user: CurrentUserDep,
+    sensitive_action_rate_limit: SensitiveActionRateLimitDep,
+    redis_client: Annotated[Redis, Depends(get_redis_client)],
     data: UserSelfEmailUpdate,
 ) -> User:
-    user = await service.update_email(
-        current_user=current_user,
-        data=data,
-    )
+    try:
+        user = await service.update_email(
+            current_user=current_user,
+            data=data,
+        )
+    except ForbiddenError:
+        key = _rate_limit_redis_keys(current_user.id)
+        await increment_rate_limit(
+            redis_client, [key], settings.SENSITIVE_RATE_LIMIT_WINDOW_MINUTES
+        )
+        raise
+
     await auth_service.revoke_session(current_user)
     return user
 
@@ -167,12 +196,22 @@ async def update_password(
     service: UserServiceDep,
     auth_service: AuthServiceDep,
     current_user: CurrentUserDep,
+    sensitive_action_rate_limit: SensitiveActionRateLimitDep,
+    redis_client: Annotated[Redis, Depends(get_redis_client)],
     data: UserPasswordUpdate,
 ) -> User:
-    user = await service.update_password(
-        current_user=current_user,
-        data=data,
-    )
+    try:
+        user = await service.update_password(
+            current_user=current_user,
+            data=data,
+        )
+    except ForbiddenError:
+        key = _rate_limit_redis_keys(current_user.id)
+        await increment_rate_limit(
+            redis_client, [key], settings.SENSITIVE_RATE_LIMIT_WINDOW_MINUTES
+        )
+        raise
+
     await auth_service.revoke_session(current_user)
     return user
 
