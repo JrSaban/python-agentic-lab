@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     GENERAL_RATE_LIMIT_MAX_REQUESTS: int = 100
     GENERAL_RATE_LIMIT_WINDOW_MINUTES: int = 1
 
+    # Idempotency key
+    IDEMPOTENCY_KEY_TTL_MINUTES: int = 60
+    IDEMPOTENCY_LOCK_TTL_SECONDS: int = 30
+
     @field_validator("JWT_SECRET_KEY")
     @classmethod
     def validate_jwt_secret_key(cls, v: str) -> str:
