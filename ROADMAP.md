@@ -41,3 +41,8 @@ lives in the README's Features section and in `CLAUDE.md`, not here.
    instead of 5. Fix: reserve the attempt first with `INCR`, which is atomic in Redis, and decide
    on the value it returns, before checking the password. To decide when doing it: whether a
    successful attempt is decremented afterwards or simply counts.
+10. **Move the middlewares out of `main.py`.** With request logging, the general rate limit and
+    idempotency, `main.py` holds three middlewares and their helpers next to the app setup. Move
+    them to their own module (e.g. `src/core/middlewares.py`) and keep `main.py` to wiring. The
+    storage modules (`rate_limit.py`, `idempotency.py`) stay HTTP-free; only the HTTP decisions
+    move. Their declaration order must be kept: it decides which one wraps which.
