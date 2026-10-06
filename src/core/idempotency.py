@@ -5,8 +5,8 @@ import json
 from typing import Literal, NotRequired, TypedDict, cast
 
 import structlog
-from redis.exceptions import RedisError
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from src.core.config import settings
 
