@@ -1,3 +1,5 @@
+from fastapi import Depends
+from sqlalchemy.sql.annotation import Annotated
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -57,3 +59,6 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
             raise
         finally:
             await session.close()
+
+
+DbSessionDep = Annotated[AsyncSession, Depends(get_db_session, scope="function")]
