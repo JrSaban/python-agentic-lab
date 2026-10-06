@@ -3,13 +3,11 @@ Routing & Controller Layer pour le domaine Todos.
 Équivalent de routes/api.php et TodoController.php dans Laravel.
 """
 
-from src.core.database import DbSessionDep
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.database import get_db_session
+from src.core.database import DbSessionDep
 from src.core.schemas import LimitQuery, PaginatedResponse
 from src.modules.auth.router import CurrentUserDep
 from src.modules.categories.repository import CategoryRepository
