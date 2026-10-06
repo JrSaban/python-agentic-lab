@@ -58,6 +58,13 @@ def _get_request_id(request: Request) -> str:
 
 def _rate_limit_identity(request: Request) -> str:
     """User id from a valid access token, else the client IP."""
+    if user_id := _user_id_from_token(request):
+        return f"user:{user_id}"
+    return f"ip:{request.client.host if request.client else 'unknown'}"
+
+
+def _user_id_from_token(request: Request) -> str | None:
+    """Extract user ID from access token."""
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         try:
@@ -65,9 +72,8 @@ def _rate_limit_identity(request: Request) -> str:
         except jwt.PyJWTError:
             payload = {}
         if user_id := payload.get("sub"):
-            return f"user:{user_id}"
-
-    return f"ip:{request.client.host if request.client else 'unknown'}"
+            return user_id
+    return None
 
 
 @app.middleware("http")
