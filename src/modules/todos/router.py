@@ -3,6 +3,7 @@ Routing & Controller Layer pour le domaine Todos.
 Équivalent de routes/api.php et TodoController.php dans Laravel.
 """
 
+from src.core.database import DbSessionDep
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/todos", tags=["Todos"])
 
 # Factory de dépendance : instancie Repository et Service injectés par requête
 def get_todo_service(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: DbSessionDep,
 ) -> TodoService:
     repository = TodoRepository(session)
     category_repository = CategoryRepository(session)

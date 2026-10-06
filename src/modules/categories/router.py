@@ -2,6 +2,7 @@
 Routing & Controller Layer pour le domaine Categories.
 """
 
+from src.core.database import DbSessionDep
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
@@ -24,7 +25,7 @@ router = APIRouter(prefix="/categories", tags=["Categories"])
 
 # Factory de dépendance : instancie Repository et Service injectés par requête
 def get_category_service(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: DbSessionDep,
     redis_client: Annotated[Redis, Depends(get_redis_client)],
 ) -> CategoryService:
     repository = CategoryRepository(session)
