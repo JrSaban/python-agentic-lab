@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-FastAPI To-Do List API built with a Clean Architecture layering, used as a learning project: the author is an experienced PHP/Laravel developer learning Python/FastAPI/SQLAlchemy by building it. Python 3.12, managed with `uv`. PostgreSQL is the database; Redis holds the category cache, the refresh tokens, the rate-limit counters and the idempotency keys.
+FastAPI To-Do List API built with a Clean Architecture layering, used as a learning project: the author is an experienced PHP/Laravel developer learning Python/FastAPI/SQLAlchemy by building it. Python 3.12, managed with `uv`. PostgreSQL is the database; Redis holds the category cache, the refresh tokens, the rate-limit counters, the idempotency keys, and the Taskiq job queue and results.
 
 Language conventions, all deliberate:
 
@@ -19,8 +19,11 @@ Branch names, commit messages and PR rules live in `CONTRIBUTING.md`; the PR tem
 Everything runs through `uv run`.
 
 ```bash
-docker compose up -d --build            # API on :8000 (hot-reload on ./src) + Postgres :5432 + Redis :6379
+docker compose up -d --build            # API on :8000 (hot-reload on ./src) + Postgres :5432 + Redis :6379 + worker + scheduler
 uv run uvicorn src.main:app --reload    # API on the host, against the compose Postgres/Redis
+
+uv run taskiq worker src.core.broker:broker --fs-discover --reload   # job worker (queue:work)
+uv run taskiq scheduler src.core.broker:scheduler --fs-discover      # scheduler, ONE instance only
 
 uv run pytest                                  # full suite
 uv run pytest tests/unit/                      # unit tests only
@@ -34,7 +37,7 @@ uv run alembic upgrade head
 
 ### Environment
 
-`.env` targets a host-run API (`POSTGRES_HOST=localhost`, `REDIS_URL=redis://localhost:6379/0`). `docker-compose.yml` overrides `DATABASE_URL` and `REDIS_URL` for the `api` container so they point at the `db`/`redis` service names — a new connection setting needs both places.
+`.env` targets a host-run API (`POSTGRES_HOST=localhost`, `REDIS_URL=redis://localhost:6379/0`). `docker-compose.yml` overrides `DATABASE_URL` and `REDIS_URL` so they point at the `db`/`redis` service names — a new connection setting needs both places. `api`, `worker` and `scheduler` share one `x-app` YAML anchor (build, volumes, env, depends_on) and differ only by `command`/`ports`; a service that redefines a key of the anchor replaces it whole, it doesn't merge into it.
 
 `Settings` refuses to start if `JWT_SECRET_KEY` is shorter than 32 bytes or starts with `change-me`, which is exactly what `.env.example` ships. A fresh `cp .env.example .env` therefore crashes at import time until a real secret is set (`openssl rand -hex 32`). Anything that imports `src.core.config` needs the variable, including Alembic — which is why the CI `migrations` job sets it.
 
@@ -56,7 +59,11 @@ Which kind to write:
 - Service branching/orchestration, and failure modes that `fakeredis` can't produce (`RedisError`, corrupted cache payload) → unit test with `side_effect`.
 - Cache behaviour (stored, served, invalidated) → integration test with `redis_client`. The "served from cache" tests prove a hit by inserting a row through the repository directly, which bypasses the service's invalidation, then asserting the API still returns the old result.
 
-`conftest.py` force-sets `JWT_SECRET_KEY` with `os.environ[...]` but `DEBUG` with `os.environ.setdefault` right above it, both before any `src.*` import. The difference is deliberate, not an inconsistency to fix: tests must never depend on the secret in a developer's `.env`, while `DEBUG` may be turned on from the shell to see logs.
+`conftest.py` force-sets `JWT_SECRET_KEY` with `os.environ[...]` but `DEBUG` with `os.environ.setdefault` right above it, both before any `src.*` import. The difference is deliberate, not an inconsistency to fix: tests must never depend on the secret in a developer's `.env`, while `DEBUG` may be turned on from the shell to see logs. It also force-sets `APP_ENV=test`, which makes `src/core/broker.py` build an in-memory broker (see "Background jobs").
+
+The SQLite test engine runs `PRAGMA foreign_keys=ON` on every connection (SQLite ignores foreign keys otherwise), so tests enforce FKs and `ON DELETE CASCADE` like Postgres. A test row must point at rows that really exist — a hardcoded `created_by_id=1` with no such user now fails.
+
+`test_session_factory` is imported into test modules under another name (`as session_factory`): pytest would try to collect a module-level name starting with `test_`.
 
 ### Auth fixtures
 
@@ -82,7 +89,7 @@ router.py → service.py → repository.py → models.py
 
 Services return ORM models and the router serializes them through `response_model`. The one deliberate exception is the cached read path of `CategoryService` (`list_categories`, `get_category_cached`), which returns `CategoryResponse` objects: a cache hit yields JSON, and an ORM instance can't be rebuilt from it, so both the hit and the miss path return the schema to keep one return type. Don't generalize this to uncached services.
 
-`auth` has no `models.py`/`repository.py` (it owns no table), and `todos_categories` holds only the association `Table`.
+`auth` and `maintenance` have no `models.py`/`repository.py` (they own no table), and `todos_categories` holds only the association `Table`. A module may also have a `tasks.py` for its background jobs (see "Background jobs").
 
 `src/core/` is what every module shares:
 
@@ -91,7 +98,8 @@ Services return ORM models and the router serializes them through `response_mode
 | `database.py` | Async engine, `Base` (declares `id` — no model repeats it), `get_db_session`: **one transaction per request**, committed after the handler returns but **before the response is sent**, rolled back on any exception. Repositories only `flush()`. Always inject it through `DbSessionDep` (`scope="function"`), never `Depends(get_db_session)` directly: that is what makes the commit happen before the response is sent, which idempotency relies on. |
 | `config.py` | `pydantic-settings`, reads `.env`. |
 | `exceptions.py` | `AppBaseError` and its subclasses, generic rather than per-resource, each carrying its `status_code`. A single `@app.exception_handler(AppBaseError)` in `main.py` handles them all, so a new error type is just a subclass with a `status_code`. |
-| `repository.py` | `BaseRepository` (below). |
+| `repository.py` | `BaseRepository` and `SoftDeleteRepository` (below). |
+| `broker.py` | The Taskiq `broker` (Redis queue + result store, in-memory under tests) and `scheduler` (see "Background jobs"). |
 | `schemas.py` | `PaginatedResponse[T]` and `LimitQuery`. |
 | `security.py` | Argon2 password hashing, JWT access tokens, refresh-token generation and hashing. |
 | `redis.py` | The shared async client (`decode_responses=True`, so values come back as `str`), the `get_redis_client` dependency, and `hash_redis_key`. |
@@ -102,6 +110,8 @@ Services return ORM models and the router serializes them through `response_mode
 ### Generic repository layer
 
 `BaseRepository[ModelT: Base]` provides `get_by_id`, `update`, `delete`, `paginate` and `count_query` — the parts that are genuinely identical across resources. Its `get_by_id` and `delete` know nothing about soft deletes (`delete` is a real `DELETE`); `TodoRepository` and `CategoryRepository` override both.
+
+`SoftDeleteRepository[ModelT]` sits between the two: it extends `BaseRepository` with `prune_soft_deleted(before)`, a single bulk `DELETE` of rows soft-deleted before a date. `TodoRepository` and `CategoryRepository` inherit from it; `UserRepository` stays on `BaseRepository`, so the method only exists where it makes sense. The column is the `soft_delete_column` class attribute (`"deleted_at"`), overridden in one line by a model that doesn't follow the convention — Laravel's `const DELETED_AT`. The repository receives the cut-off date; the retention policy lives in the service.
 
 `TodoRepository` keeps its own `get_by_id`/`update` (`# pyrefly: ignore[bad-override]`), because `owner_id`/`categories` are required parameters the shared signature can't express without weakening the "no default" guarantee described under Ownership. This divergence is deliberate, not a gap to unify.
 
@@ -125,6 +135,8 @@ Consequences to keep in mind:
 There is **no global scope**, unlike Laravel's `SoftDeletes` trait: every query on these two models filters `deleted_at IS NULL` by hand, and a new query must do the same. That includes queries going *through* the relationship (`selectinload`, `.any()`): a soft delete leaves the `todos_categories` rows in place, so the other side has to be filtered too.
 
 A deleted row behaves exactly like a missing one, for admins as well: 404 on `GET`/`PATCH`/`DELETE`, absent from lists and totals, silently dropped when its ID is sent in a todo's `category_ids`. There is no restore endpoint and no way to list deleted rows.
+
+**Soft-deleted rows don't stay forever.** Once a week, the `maintenance:prune_soft_deleted` job hard-deletes the todos and categories soft-deleted more than `SOFT_DELETE_RETENTION_DAYS` (30) ago — Laravel's `Prunable` + `model:prune`. Their `todos_categories` rows go with them through the FKs' `ON DELETE CASCADE`, not by hand.
 
 ### Authentication
 
@@ -244,6 +256,25 @@ idempotency:<user_id>:<key> → {"status": "in_progress", "request_hash"}       
 - **Stored only after the commit**, which `DbSessionDep`'s `scope="function"` guarantees: a failed commit answers 500 and stores nothing.
 - **Fails closed, unlike the general rate limit.** If Redis is down when claiming, the answer is 503: the client explicitly asked for a no-duplicate guarantee. A Redis failure *after* a success still returns the real 2xx — turning it into an error would push the client to create the duplicate.
 - **Declaration order in `main.py`: `idempotency`, then `rate_limit`, then `log_requests`**, so a replay still counts toward the general limit and is still logged.
+
+### Background jobs
+
+Taskiq, the counterpart of Laravel queues + scheduler. Three roles, three processes:
+
+- **`broker`** (`src/core/broker.py`) — the intermediary: the API sends a job with `.kiq()` (`dispatch()`), a worker receives it. Results are stored in Redis for `TASK_RESULT_TTL_HOURS` (72h: a Sunday run must still be readable on Monday morning).
+- **worker** — `taskiq worker`, the `queue:work` equivalent. Several may run.
+- **scheduler** — `taskiq scheduler`, sends scheduled jobs into the queue at their cron time (UTC) and runs nothing itself. **Exactly one instance**: two would send every scheduled job twice.
+
+Rules, all deliberate:
+
+- **Taskiq, not ARQ** (the ROADMAP item still says ARQ): ARQ's latest release requires `redis<6`, and the project is on redis-py 8 — uv silently falls back to an old ARQ instead. SAQ has the same problem.
+- **`RedisStreamBroker`, not `ListQueueBroker`.** redis-py 8 sets a 5 s `socket_timeout` by default; `ListQueueBroker` waits on an unbounded `BRPOP`, so an idle worker crashed and restarted every ~6 s. Streams read in 2 s slices, and acknowledge a job only once handled: a worker dying mid-job hands it to another (at-least-once). **Every job must therefore be safe to run twice.**
+- **Jobs live in a `tasks.py` per module**, the Celery convention, found by `--fs-discover`. **Both the worker and the scheduler need `--fs-discover`**: without it the scheduler never imports the job and its schedule silently never fires. A job that spans modules goes into `maintenance`.
+- **A job is a thin entry point**, like a route: open a session, call a service, commit. Each job sets an explicit `task_name` (`"<module>:<job>"`), so moving the file doesn't orphan messages already queued.
+- **Jobs open their own session** from `async_session_factory` and commit themselves — there is no FastAPI, hence no `DbSessionDep`, in the worker. Import the factory by name in `tasks.py`: tests monkeypatch `src.modules.<module>.tasks.async_session_factory` with `test_session_factory`.
+- **Under tests** (`APP_ENV=test`), `broker` is an `InMemoryBroker(await_inplace=True)`: `.kiq()` runs the job immediately, no worker or Redis, and `await task.wait_result()` returns its result. The choice is made at import, since jobs attach to the broker by decorator.
+- **The API starts and stops the broker** in `main.py`'s `lifespan`. The worker never imports `main.py`.
+- **Failures are not retried.** A failed job is logged and its result kept with `is_err=True` until the TTL; there is no `failed_jobs` table. Fine for the weekly prune, which catches up on its next run.
 
 ### Logging and request IDs
 

@@ -9,7 +9,8 @@ A REST API for managing todos and categories, built with **FastAPI** and **Clean
 - **Python 3.12** · [uv](https://docs.astral.sh/uv/) for dependency management
 - **FastAPI** — async web framework, automatic OpenAPI docs
 - **SQLAlchemy 2.0** (async) + **Alembic** — ORM and migrations
-- **PostgreSQL** · **Redis** (cache, refresh tokens, rate-limit counters, idempotency keys)
+- **PostgreSQL** · **Redis** (cache, refresh tokens, rate-limit counters, idempotency keys, job queue)
+- **Taskiq** — async background jobs and scheduling (worker + scheduler processes)
 - **Pydantic v2** — request/response validation and serialization
 - **argon2-cffi** — password hashing · **PyJWT** — access tokens
 - **structlog** — JSON logs with a request ID on every line
@@ -24,7 +25,7 @@ A REST API for managing todos and categories, built with **FastAPI** and **Clean
 - **Ownership & permissions** — a todo is private to its owner (admins see everything); a category is visible to everyone but only its creator or an admin can edit it, and only an admin can delete it
 - **Todos ↔ Categories** — many-to-many relationship, with optional eager-loading (`?include=categories`) and filtering by category
 - **Pagination & filtering** — every list endpoint supports `skip`/`limit` (page sizes of 10, 25, 50 or 100), free-text search, and resource-specific filters (status, category, role, ...)
-- **Soft deletes** on todos and categories — a deleted row stays in the database but is invisible to the API, like Laravel's `SoftDeletes`
+- **Soft deletes** on todos and categories — a deleted row stays in the database but is invisible to the API, like Laravel's `SoftDeletes`, and is deleted for good by a weekly background job after 30 days, like Laravel's `Prunable`
 - **Rate limiting** — a general per-user / per-IP request quota, plus stricter limits on failed logins and on wrong-password attempts when changing your email or password
 - **Idempotency keys** — an optional `Idempotency-Key` header on `POST /todos` and `POST /categories`, so a retried request returns the original response instead of creating a duplicate
 - **Redis caching** on category reads, invalidated on every write
@@ -63,7 +64,7 @@ openssl rand -hex 32
 Then start everything:
 
 ```bash
-docker compose up -d --build                          # API on :8000, Postgres on :5432, Redis on :6379
+docker compose up -d --build                          # API on :8000, Postgres on :5432, Redis on :6379, job worker + scheduler
 docker compose exec api uv run alembic upgrade head   # create the tables
 ```
 
@@ -77,6 +78,8 @@ docker compose up -d db redis
 uv sync
 uv run alembic upgrade head
 uv run uvicorn src.main:app --reload
+uv run taskiq worker src.core.broker:broker --fs-discover        # background jobs, in another terminal
+uv run taskiq scheduler src.core.broker:scheduler --fs-discover  # scheduled jobs (one instance only)
 ```
 
 </details>
@@ -119,12 +122,13 @@ All routes are prefixed with `/api/v1`. `POST /todos` and `POST /categories` acc
 ```
 src/
 ├── core/            # cross-cutting: database, redis, config, logging, exceptions, security,
-│                    # rate limiting, idempotency, generic repository
+│                    # rate limiting, idempotency, generic repository, task broker
 ├── modules/
 │   ├── auth/        # login, refresh, logout, JWT validation
 │   ├── users/        # user profiles, admin management
 │   ├── todos/        # todos, ownership
 │   ├── categories/   # categories, creator/admin permissions, cache
+│   ├── maintenance/  # background jobs spanning several modules (weekly pruning)
 │   └── todos_categories/  # many-to-many association table
 └── main.py          # app, middlewares (idempotency, rate limit, request ID), exception handler
 alembic/versions/    # migrations
