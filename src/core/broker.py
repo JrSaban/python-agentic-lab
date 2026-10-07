@@ -14,7 +14,7 @@ Les jobs vivent dans les fichiers `tasks.py` des modules, découverts par le wor
 
 from taskiq import AsyncBroker, InMemoryBroker, TaskiqScheduler
 from taskiq.schedule_sources import LabelScheduleSource
-from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
+from taskiq_redis import RedisAsyncResultBackend, RedisStreamBroker
 
 from src.core.config import settings
 from src.core.logging import setup_logging
@@ -33,7 +33,7 @@ def _build_broker() -> AsyncBroker:
         prefix_str="taskiq:result",
     )
 
-    return ListQueueBroker(url=settings.REDIS_URL, queue_name="taskiq:queue").with_result_backend(
+    return RedisStreamBroker(url=settings.REDIS_URL, queue_name="taskiq:queue").with_result_backend(
         backend
     )
 
