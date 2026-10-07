@@ -240,7 +240,7 @@ idempotency:<user_id>:<key> → {"status": "in_progress", "request_hash"}       
 
 - **Keys are scoped per user**, read from the JWT like the general rate limit. Without a valid token the middleware steps aside and the route answers 401. `POST /users` is not covered: email uniqueness already blocks the duplicate.
 - **The key is claimed atomically before the route runs** (`SET NX`, short TTL so a crash can't lock it for an hour). A request never runs without holding the claim: a key in progress, or one that vanished between the failed claim and the read, answers 409.
-- **Same key, different body → 422**, compared by SHA-256 of the raw request body (byte for byte: the same JSON reordered is a different body). Empty or longer than 255 characters → 400.
+- **Same key, different request → 422**, compared by SHA-256 of the method, the path and the raw body. The method and path matter: a key reused on another route must not replay that route's resource. Empty or longer than 255 characters → 400.
 - **Only 2xx responses are stored.** A 4xx depends on state that can change (a taken category name may be freed), so any non-2xx answer or exception releases the key and the retry runs for real. Replays carry `Idempotent-Replayed: true`.
 - **Stored only after the commit**, which `DbSessionDep`'s `scope="function"` guarantees: a failed commit answers 500 and stores nothing.
 - **Fails closed, unlike the general rate limit.** If Redis is down when claiming, the answer is 503: the client explicitly asked for a no-duplicate guarantee. A Redis failure *after* a success still returns the real 2xx — turning it into an error would push the client to create the duplicate.
