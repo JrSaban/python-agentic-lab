@@ -1,10 +1,10 @@
-from sqlalchemy import event
 import os
 from collections.abc import AsyncGenerator
 
 import fakeredis
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 """
