@@ -1,5 +1,7 @@
 import time
 import uuid
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 import jwt
 import structlog
@@ -7,6 +9,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from redis.exceptions import RedisError
 
+from src.core.broker import broker
 from src.core.config import settings
 from src.core.exceptions import (
     AppBaseError,
@@ -36,6 +39,15 @@ Point d'entrée principal de l'application.
 
 setup_logging()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Start the task broker with the app and shut it down on exit."""
+    await broker.startup()
+    yield
+    await broker.shutdown()
+
+
 app = FastAPI(
     title=settings.APP_NAME,
     description="API REST moderne construite avec FastAPI et Clean Architecture",
@@ -43,6 +55,7 @@ app = FastAPI(
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
     openapi_url="/openapi.json" if settings.DEBUG else None,
+    lifespan=lifespan,
 )
 
 # Enregistrement des routes de l'API avec préfixe de version (/api/v1)
