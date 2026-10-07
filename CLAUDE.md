@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-FastAPI To-Do List API built with a Clean Architecture layering, used as a learning project: the author is an experienced PHP/Laravel developer learning Python/FastAPI/SQLAlchemy by building it. Python 3.12, managed with `uv`. PostgreSQL is the database; Redis holds the category cache, the refresh tokens and the rate-limit counters.
+FastAPI To-Do List API built with a Clean Architecture layering, used as a learning project: the author is an experienced PHP/Laravel developer learning Python/FastAPI/SQLAlchemy by building it. Python 3.12, managed with `uv`. PostgreSQL is the database; Redis holds the category cache, the refresh tokens, the rate-limit counters and the idempotency keys.
 
 Language conventions, all deliberate:
 
@@ -48,7 +48,7 @@ uv run alembic upgrade head
 
 ## Tests
 
-Integration tests (`tests/test_*.py`) go through the full FastAPI stack with the `client` fixture, which overrides two dependencies: `get_db_session` (in-memory SQLite via `aiosqlite`, tables created and dropped around every test) and `get_redis_client` (a per-test `fakeredis.FakeAsyncRedis`, exposed as the `redis_client` fixture so a test can inspect or seed keys directly). The rate-limit middleware calls `get_redis_client()` itself, outside dependency injection, so `dependency_overrides` doesn't reach it: the `client` fixture also monkeypatches `src.core.redis.redis_client` with the same fake. Every test starts with an empty fake, hence fresh rate-limit counters. Unit tests (`tests/unit/`) isolate one `*Service` by passing `AsyncMock` for its repositories and its Redis client; the module-level functions of `src/core/security.py` are called directly by services rather than injected, so they are patched at the import site: `@patch("src.modules.<module>.service.<function_name>")`.
+Integration tests (`tests/test_*.py`) go through the full FastAPI stack with the `client` fixture, which overrides two dependencies: `get_db_session` (in-memory SQLite via `aiosqlite`, tables created and dropped around every test) and `get_redis_client` (a per-test `fakeredis.FakeAsyncRedis`, exposed as the `redis_client` fixture so a test can inspect or seed keys directly). The rate-limit and idempotency middlewares call `get_redis_client()` themselves, outside dependency injection, so `dependency_overrides` doesn't reach them: the `client` fixture also monkeypatches `src.core.redis.redis_client` with the same fake. Every test starts with an empty fake, hence fresh rate-limit counters and idempotency keys. Both middlewares read the user from the JWT, not from `get_current_user`: a test that needs them to see a user sends a real `Authorization: Bearer` header (`create_access_token`), even with `authenticated_client`. Unit tests (`tests/unit/`) isolate one `*Service` by passing `AsyncMock` for its repositories and its Redis client; the module-level functions of `src/core/security.py` are called directly by services rather than injected, so they are patched at the import site: `@patch("src.modules.<module>.service.<function_name>")`.
 
 Which kind to write:
 
@@ -97,6 +97,7 @@ Services return ORM models and the router serializes them through `response_mode
 | `redis.py` | The shared async client (`decode_responses=True`, so values come back as `str`), the `get_redis_client` dependency, and `hash_redis_key`. |
 | `logging.py` | `structlog` setup. |
 | `rate_limit.py` | `get_retry_after` / `increment_rate_limit` / `seconds_until_reset`, the Redis counters behind every rate limit (see below). |
+| `idempotency.py` | Redis storage of idempotency keys: claim, read, save, release (see below). |
 
 ### Generic repository layer
 
@@ -227,6 +228,23 @@ Three independent limits, all fixed-window counters in Redis, all answering 429 
 - **The general limit fails open.** If Redis raises, the middleware logs `redis_unavailable` and lets the request through uncounted, instead of turning every request into a 500 — a deliberate choice, not a gap to close.
 - **`GET /health` is never counted**, so a monitoring probe can neither consume a quota nor get a 429.
 - **`log_requests` must stay declared after `rate_limit` in `main.py`**, so that a 429 from the general limit is still logged and still carries `X-Request-ID`. `test_blocked_request_still_carries_request_id` checks it.
+
+### Idempotency keys
+
+An optional `Idempotency-Key` header on `POST /todos` and `POST /categories` (`IDEMPOTENT_ROUTES` in `main.py`): a retried request gets the stored response back instead of creating a duplicate. The `idempotency` middleware makes the HTTP decisions; `src/core/idempotency.py` only stores, and knows nothing of routes or requests.
+
+```
+idempotency:<user_id>:<key> → {"status": "in_progress", "request_hash"}                        (IDEMPOTENCY_LOCK_TTL_SECONDS)
+                            → {"status": "done", "request_hash", "response_status", "response_body"}  (IDEMPOTENCY_KEY_TTL_MINUTES)
+```
+
+- **Keys are scoped per user**, read from the JWT like the general rate limit. Without a valid token the middleware steps aside and the route answers 401. `POST /users` is not covered: email uniqueness already blocks the duplicate.
+- **The key is claimed atomically before the route runs** (`SET NX`, short TTL so a crash can't lock it for an hour). A request never runs without holding the claim: a key in progress, or one that vanished between the failed claim and the read, answers 409.
+- **Same key, different body → 422**, compared by SHA-256 of the raw request body (byte for byte: the same JSON reordered is a different body). Empty or longer than 255 characters → 400.
+- **Only 2xx responses are stored.** A 4xx depends on state that can change (a taken category name may be freed), so any non-2xx answer or exception releases the key and the retry runs for real. Replays carry `Idempotent-Replayed: true`.
+- **Stored only after the commit**, which `DbSessionDep`'s `scope="function"` guarantees: a failed commit answers 500 and stores nothing.
+- **Fails closed, unlike the general rate limit.** If Redis is down when claiming, the answer is 503: the client explicitly asked for a no-duplicate guarantee. A Redis failure *after* a success still returns the real 2xx — turning it into an error would push the client to create the duplicate.
+- **Declaration order in `main.py`: `idempotency`, then `rate_limit`, then `log_requests`** (the last declared wraps the others), so a replay still counts toward the general limit and is still logged.
 
 ### Logging and request IDs
 
