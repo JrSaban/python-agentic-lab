@@ -9,7 +9,7 @@ A REST API for managing todos and categories, built with **FastAPI** and **Clean
 - **Python 3.12** · [uv](https://docs.astral.sh/uv/) for dependency management
 - **FastAPI** — async web framework, automatic OpenAPI docs
 - **SQLAlchemy 2.0** (async) + **Alembic** — ORM and migrations
-- **PostgreSQL** · **Redis** (cache, refresh tokens, rate-limit counters)
+- **PostgreSQL** · **Redis** (cache, refresh tokens, rate-limit counters, idempotency keys)
 - **Pydantic v2** — request/response validation and serialization
 - **argon2-cffi** — password hashing · **PyJWT** — access tokens
 - **structlog** — JSON logs with a request ID on every line
@@ -26,6 +26,7 @@ A REST API for managing todos and categories, built with **FastAPI** and **Clean
 - **Pagination & filtering** — every list endpoint supports `skip`/`limit` (page sizes of 10, 25, 50 or 100), free-text search, and resource-specific filters (status, category, role, ...)
 - **Soft deletes** on todos and categories — a deleted row stays in the database but is invisible to the API, like Laravel's `SoftDeletes`
 - **Rate limiting** — a general per-user / per-IP request quota, plus stricter limits on failed logins and on wrong-password attempts when changing your email or password
+- **Idempotency keys** — an optional `Idempotency-Key` header on `POST /todos` and `POST /categories`, so a retried request returns the original response instead of creating a duplicate
 - **Redis caching** on category reads, invalidated on every write
 - **Structured logging** — one JSON line per request, correlated by an `X-Request-ID` header
 - **Alembic migrations**, including a 3-step pattern (add nullable → backfill → enforce `NOT NULL`) for introducing foreign keys on already-populated tables
@@ -39,6 +40,7 @@ A few decisions worth a second look if you're skimming the code:
 - **Refresh tokens are stored hashed and rotated atomically.** Redis only holds the SHA-256 of a token, never the token itself. Each `/refresh` consumes it with a single `GETDEL`, so the same token can't be exchanged twice, even by two requests arriving at the same time. Rotation alone would let an active session renew itself forever, so a separate, longer-lived marker caps the session's absolute lifetime regardless of activity. Changing your password or your email revokes it outright, the same way logging out does.
 - **Login takes the same time whether the email exists or not.** An unknown email still runs a full Argon2 verification, against a dummy hash computed once at startup, instead of short-circuiting — otherwise the response time alone would reveal which emails are registered, even behind an identical error message.
 - **Rate limits that only punish failures.** Login attempts are counted per IP *and* per email, so neither rotating emails from one machine nor spreading guesses across machines gets around the limit — and only failed attempts count, so a legitimate user is never throttled for logging in. The services know nothing about it: limits are checked and counted at the router level.
+- **Retries that can't create duplicates, even concurrent ones.** A client that times out and retries is the classic duplicate-maker — and the retry usually arrives while the first request is still running. The idempotency key is therefore claimed atomically in Redis (`SET NX`) *before* the request runs, so a concurrent retry gets a `409` instead of running twice. Only successful responses are stored, and only once the database transaction has actually committed.
 - **A cache that never takes the API down.** Paginated category lists are invalidated with a generation counter (one `INCR` instead of hunting for every cached page). Every Redis call on the cache path is allowed to fail: the request falls back to PostgreSQL and logs a warning.
 - **Generic repository layer.** `BaseRepository[ModelT: Base]` (`src/core/repository.py`) uses Python 3.12's native generic syntax (`class Foo[T]`) to share pagination, counting and typed filtering across `Todo`, `Category` and `User` repositories, while each resource keeps its own fully-typed filter parameters — no dynamic/untyped filter dicts.
 - **Clean Architecture, enforced consistently.** Every module follows the same `router → service → repository → models` layering; services raise framework-agnostic exceptions (`NotFoundError`, `ForbiddenError`, ...) mapped to HTTP status codes in one place, never `HTTPException` scattered through the business logic.
@@ -91,7 +93,7 @@ uv run ruff format .       # format
 
 ## API overview
 
-All routes are prefixed with `/api/v1`.
+All routes are prefixed with `/api/v1`. `POST /todos` and `POST /categories` accept an optional `Idempotency-Key` header.
 
 | Method | Path | Description |
 |---|---|---|
@@ -116,14 +118,15 @@ All routes are prefixed with `/api/v1`.
 
 ```
 src/
-├── core/            # cross-cutting: database, redis, config, logging, exceptions, security, generic repository
+├── core/            # cross-cutting: database, redis, config, logging, exceptions, security,
+│                    # rate limiting, idempotency, generic repository
 ├── modules/
 │   ├── auth/        # login, refresh, logout, JWT validation
 │   ├── users/        # user profiles, admin management
 │   ├── todos/        # todos, ownership
 │   ├── categories/   # categories, creator/admin permissions, cache
 │   └── todos_categories/  # many-to-many association table
-└── main.py          # app, request-ID middleware, exception handlers
+└── main.py          # app, middlewares (idempotency, rate limit, request ID), exception handler
 alembic/versions/    # migrations
 tests/               # integration tests + tests/unit/ for isolated service tests
 ```

@@ -3,13 +3,21 @@ import uuid
 
 import jwt
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from redis.exceptions import RedisError
 
 from src.core.config import settings
 from src.core.exceptions import (
     AppBaseError,
+)
+from src.core.idempotency import (
+    claim_idempotency_key,
+    get_idempotency_record,
+    hash_request,
+    idempotency_redis_key,
+    release_idempotency_key,
+    save_idempotent_response,
 )
 from src.core.logging import setup_logging
 from src.core.rate_limit import increment_rate_limit, seconds_until_reset
@@ -46,6 +54,7 @@ app.include_router(users_router, prefix=settings.API_V1_STR)
 
 logger = structlog.get_logger()
 REQUEST_ID_HEADER = "X-Request-ID"
+IDEMPOTENT_ROUTES = frozenset([f"{settings.API_V1_STR}/todos", f"{settings.API_V1_STR}/categories"])
 
 
 def _get_request_id(request: Request) -> str:
@@ -58,6 +67,13 @@ def _get_request_id(request: Request) -> str:
 
 def _rate_limit_identity(request: Request) -> str:
     """User id from a valid access token, else the client IP."""
+    if user_id := _user_id_from_token(request):
+        return f"user:{user_id}"
+    return f"ip:{request.client.host if request.client else 'unknown'}"
+
+
+def _user_id_from_token(request: Request) -> str | None:
+    """Extract user ID from access token."""
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         try:
@@ -65,9 +81,125 @@ def _rate_limit_identity(request: Request) -> str:
         except jwt.PyJWTError:
             payload = {}
         if user_id := payload.get("sub"):
-            return f"user:{user_id}"
+            return user_id
+    return None
 
-    return f"ip:{request.client.host if request.client else 'unknown'}"
+
+def _has_to_check_idempotency(request: Request) -> bool:
+    """Check if the request has to be checked for idempotency."""
+    return (
+        request.method == "POST"
+        and request.url.path in IDEMPOTENT_ROUTES
+        and request.headers.get("Idempotency-Key") is not None
+    )
+
+
+def _get_idempotency_key(request: Request) -> str | None:
+    """Extract idempotency key from header."""
+    idempotency_key = request.headers.get("Idempotency-Key", "")
+    return idempotency_key if idempotency_key and len(idempotency_key) <= 255 else None
+
+
+@app.middleware("http")
+async def idempotency(request: Request, call_next):
+    """Middleware for idempotency for idempotent requests."""
+    if not _has_to_check_idempotency(request):
+        return await call_next(request)
+
+    if not (user_id := _user_id_from_token(request)):
+        return await call_next(request)
+
+    if not (idempotency_key := _get_idempotency_key(request)):
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Clé d'idempotence invalide."},
+        )
+
+    redis_key = idempotency_redis_key(user_id=user_id, idempotency_key=idempotency_key)
+    request_hash = hash_request(
+        method=request.method, path=request.url.path, body=await request.body()
+    )
+    record = None
+
+    try:
+        is_claimed = await claim_idempotency_key(
+            get_redis_client(), key=redis_key, request_hash=request_hash
+        )
+        if not is_claimed:
+            record = await get_idempotency_record(get_redis_client(), key=redis_key)
+    except RedisError:
+        logger.error("redis_unavailable", operation="idempotency_check", exc_info=True)
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Le service de gestion des requêtes est indisponible."},
+        )
+
+    if not is_claimed:
+        if record:
+            if record["request_hash"] != request_hash:
+                return JSONResponse(
+                    status_code=422,
+                    content={
+                        "detail": (
+                            "Cette clé d'idempotence a déjà été utilisée pour "
+                            "une requête différente."
+                        )
+                    },
+                )
+            elif record["status"] == "in_progress":
+                try:
+                    retry_after = await seconds_until_reset(get_redis_client(), redis_key)
+                except RedisError:
+                    logger.error(
+                        "redis_unavailable", operation="seconds_until_reset", exc_info=True
+                    )
+                    return JSONResponse(
+                        status_code=503,
+                        content={"detail": "Le service de gestion des requêtes est indisponible."},
+                    )
+
+                return JSONResponse(
+                    status_code=409,
+                    headers={"Retry-After": str(retry_after)},
+                    content={"detail": "Une requête similaire est en cours de traitement"},
+                )
+            else:
+                # record["status"] == "done"
+                return Response(
+                    status_code=record["response_status"],
+                    content=record["response_body"],
+                    media_type="application/json",
+                    headers={"Idempotent-Replayed": "true"},
+                )
+        else:
+            return JSONResponse(
+                status_code=409,
+                content={"detail": "La requête n'a pas pu être traitée. Veuillez réessayer."},
+            )
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        await release_idempotency_key(get_redis_client(), redis_key)
+        raise
+
+    body_parts = [chunk async for chunk in response.body_iterator]
+    response_body = b"".join(body_parts)
+
+    if 200 <= response.status_code < 300:
+        await save_idempotent_response(
+            redis_client=get_redis_client(),
+            key=redis_key,
+            request_hash=request_hash,
+            response_status=response.status_code,
+            response_body=response_body.decode(),
+        )
+    else:
+        await release_idempotency_key(get_redis_client(), redis_key)
+
+    return Response(
+        content=response_body, status_code=response.status_code, headers=dict(response.headers)
+    )
 
 
 @app.middleware("http")
