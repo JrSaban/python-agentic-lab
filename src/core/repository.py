@@ -89,7 +89,7 @@ class SoftDeleteRepository[ModelT: Base](BaseRepository[ModelT]):
     soft_delete_column: str = "deleted_at"
 
     async def prune_soft_deleted(self, before: datetime) -> int:
-        """Hard-delete the rows soft-deleted before before; return how many were deleted."""
+        """Hard-delete the rows soft-deleted before the given date; return how many were deleted."""
         column = getattr(self.model, self.soft_delete_column)
         query = delete(self.model).where(column < before)
         result = await self.session.execute(query)
