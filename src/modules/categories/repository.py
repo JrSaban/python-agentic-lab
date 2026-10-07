@@ -9,12 +9,12 @@ from datetime import UTC, datetime
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.repository import BaseRepository, FilterParams
+from src.core.repository import FilterParams, SoftDeleteRepository
 from src.modules.categories.models import Category
 from src.modules.categories.schemas import CategoryCreate
 
 
-class CategoryRepository(BaseRepository[Category]):
+class CategoryRepository(SoftDeleteRepository[Category]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, Category)
 

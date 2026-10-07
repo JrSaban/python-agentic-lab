@@ -10,13 +10,13 @@ from sqlalchemy import Select, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.core.repository import BaseRepository, FilterParams
+from src.core.repository import FilterParams, SoftDeleteRepository
 from src.modules.categories.models import Category
 from src.modules.todos.models import Todo
 from src.modules.todos.schemas import TodoCreate, TodoUpdate
 
 
-class TodoRepository(BaseRepository[Todo]):
+class TodoRepository(SoftDeleteRepository[Todo]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, Todo)
 

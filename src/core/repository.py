@@ -1,10 +1,11 @@
 """Repository Pattern pour l'accès aux données de base."""
 
 from collections.abc import Sequence
-from typing import Literal, NamedTuple
+from datetime import datetime
+from typing import Literal, NamedTuple, cast
 
 from pydantic import BaseModel
-from sqlalchemy import Select, select
+from sqlalchemy import CursorResult, Select, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -79,3 +80,17 @@ class BaseRepository[ModelT: Base]:
     def escape_ilike_value(value: str) -> str:
         """Escape \\, % and _ so an ilike search matches them literally, not as wildcards."""
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+class SoftDeleteRepository[ModelT: Base](BaseRepository[ModelT]):
+    """Repository of a soft-deletable model: adds hard deletion
+    of rows soft-deleted long enough ago."""
+
+    soft_delete_column: str = "deleted_at"
+
+    async def prune_soft_deleted(self, before: datetime) -> int:
+        """Hard-delete the rows soft-deleted before before; return how many were deleted."""
+        column = getattr(self.model, self.soft_delete_column)
+        query = delete(self.model).where(column < before)
+        result = await self.session.execute(query)
+        return cast(CursorResult, result).rowcount
