@@ -25,9 +25,9 @@ def idempotency_redis_key(*, user_id: str, idempotency_key: str) -> str:
     return f"idempotency:{user_id}:{idempotency_key}"
 
 
-def hash_request_body(body: bytes) -> str:
+def hash_request(*, method: str, path: str, body: bytes) -> str:
     """SHA-256 of the raw request body."""
-    return hashlib.sha256(body).hexdigest()
+    return hashlib.sha256(f"{method}:{path}:{body}".encode()).hexdigest()
 
 
 async def claim_idempotency_key(redis_client: Redis, *, key: str, request_hash: str) -> bool:

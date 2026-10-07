@@ -14,7 +14,7 @@ from src.core.exceptions import (
 from src.core.idempotency import (
     claim_idempotency_key,
     get_idempotency_record,
-    hash_request_body,
+    hash_request,
     idempotency_redis_key,
     release_idempotency_key,
     save_idempotent_response,
@@ -116,7 +116,9 @@ async def idempotency(request: Request, call_next):
         )
 
     redis_key = idempotency_redis_key(user_id=user_id, idempotency_key=idempotency_key)
-    request_hash = hash_request_body(await request.body())
+    request_hash = hash_request(
+        method=request.method, path=request.url.path, body=await request.body()
+    )
     record = None
 
     try:
