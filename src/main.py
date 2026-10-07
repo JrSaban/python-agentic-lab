@@ -138,8 +138,10 @@ async def idempotency(request: Request, call_next):
                 return JSONResponse(
                     status_code=422,
                     content={
-                        """detail": "Cette clé d'idempotence a déjà été utilisée pour
-                        une requête différente."""
+                        "detail": (
+                            "Cette clé d'idempotence a déjà été utilisée pour "
+                            "une requête différente."
+                        )
                     },
                 )
             elif record["status"] == "in_progress":
