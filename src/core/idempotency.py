@@ -30,7 +30,6 @@ def hash_request(*, method: str, path: str, body: bytes) -> str:
     return hashlib.sha256(f"{method}:{path}:".encode() + body).hexdigest()
 
 
-
 async def claim_idempotency_key(redis_client: Redis, *, key: str, request_hash: str) -> bool:
     """SET NX an in_progress record with the short lock TTL; True if this request got it."""
     record: IdempotencyRecord = {"status": "in_progress", "request_hash": request_hash}
