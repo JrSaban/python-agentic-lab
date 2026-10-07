@@ -43,6 +43,7 @@ async def get_idempotency_record(redis_client: Redis, key: str) -> IdempotencyRe
     """The stored record, or None if the key doesn't exist (anymore)."""
     if raw := await redis_client.get(key):
         return cast(IdempotencyRecord, json.loads(raw))
+    return None
 
 
 async def save_idempotent_response(
