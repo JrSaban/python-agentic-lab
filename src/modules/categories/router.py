@@ -6,9 +6,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.database import get_db_session
+from src.core.database import DbSessionDep
 from src.core.redis import get_redis_client
 from src.core.schemas import LimitQuery, PaginatedResponse
 from src.modules.auth.router import CurrentUserDep
@@ -24,7 +23,7 @@ router = APIRouter(prefix="/categories", tags=["Categories"])
 
 # Factory de dépendance : instancie Repository et Service injectés par requête
 def get_category_service(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: DbSessionDep,
     redis_client: Annotated[Redis, Depends(get_redis_client)],
 ) -> CategoryService:
     repository = CategoryRepository(session)

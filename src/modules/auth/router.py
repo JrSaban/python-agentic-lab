@@ -6,10 +6,9 @@ import jwt
 from fastapi import APIRouter, Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
-from src.core.database import get_db_session
+from src.core.database import DbSessionDep
 from src.core.exceptions import TooManyRequestsError, UnauthorizedError
 from src.core.rate_limit import get_retry_after, increment_rate_limit
 from src.core.redis import get_redis_client
@@ -36,7 +35,7 @@ def _rate_limit_redis_keys(request: Request, email: str) -> tuple[str, str]:
 # Dependency pour injecter l'utilisateur connecté
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: DbSessionDep,
 ) -> User:
     try:
         payload = decode_access_token(credentials.credentials)
@@ -57,7 +56,7 @@ async def get_current_user(
 
 # Factory de dépendance : instancie Repository et Service injectés par requête
 def get_auth_service(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: DbSessionDep,
     redis_client: Annotated[Redis, Depends(get_redis_client)],
 ) -> AuthService:
     user_repository = UserRepository(session)

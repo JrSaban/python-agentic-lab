@@ -6,9 +6,8 @@ Routing & Controller Layer pour le domaine Todos.
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.database import get_db_session
+from src.core.database import DbSessionDep
 from src.core.schemas import LimitQuery, PaginatedResponse
 from src.modules.auth.router import CurrentUserDep
 from src.modules.categories.repository import CategoryRepository
@@ -22,7 +21,7 @@ router = APIRouter(prefix="/todos", tags=["Todos"])
 
 # Factory de dépendance : instancie Repository et Service injectés par requête
 def get_todo_service(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: DbSessionDep,
 ) -> TodoService:
     repository = TodoRepository(session)
     category_repository = CategoryRepository(session)

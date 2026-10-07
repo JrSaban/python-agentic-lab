@@ -88,7 +88,7 @@ Services return ORM models and the router serializes them through `response_mode
 
 | File | Role |
 |---|---|
-| `database.py` | Async engine, `Base` (declares `id` — no model repeats it), `get_db_session`: **one transaction per request**, committed after the handler returns, rolled back on any exception. Repositories only `flush()`. |
+| `database.py` | Async engine, `Base` (declares `id` — no model repeats it), `get_db_session`: **one transaction per request**, committed after the handler returns but **before the response is sent**, rolled back on any exception. Repositories only `flush()`. Always inject it through `DbSessionDep` (`scope="function"`): with FastAPI's default scope the commit runs after the response is sent (a failed commit would still answer 201), and declarations with different scopes get two separate sessions in one request. |
 | `config.py` | `pydantic-settings`, reads `.env`. |
 | `exceptions.py` | `AppBaseError` and its subclasses, generic rather than per-resource, each carrying its `status_code`. A single `@app.exception_handler(AppBaseError)` in `main.py` handles them all, so a new error type is just a subclass with a `status_code`. |
 | `repository.py` | `BaseRepository` (below). |

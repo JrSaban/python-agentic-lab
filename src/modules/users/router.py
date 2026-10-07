@@ -4,10 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
-from src.core.database import get_db_session
+from src.core.database import DbSessionDep
 from src.core.exceptions import ForbiddenError, TooManyRequestsError
 from src.core.rate_limit import get_retry_after, increment_rate_limit
 from src.core.redis import get_redis_client
@@ -36,7 +35,7 @@ def _rate_limit_redis_key(user_id: int) -> str:
 
 # Factory de dépendance : instancie Repository et Service injectés par requête
 def get_user_service(
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: DbSessionDep,
 ) -> UserService:
     repository = UserRepository(session)
     return UserService(repository)
