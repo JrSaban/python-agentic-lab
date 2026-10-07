@@ -88,7 +88,7 @@ Services return ORM models and the router serializes them through `response_mode
 
 | File | Role |
 |---|---|
-| `database.py` | Async engine, `Base` (declares `id` — no model repeats it), `get_db_session`: **one transaction per request**, committed after the handler returns but **before the response is sent**, rolled back on any exception. Repositories only `flush()`. Always inject it through `DbSessionDep` (`scope="function"`): with FastAPI's default scope the commit runs after the response is sent (a failed commit would still answer 201), and declarations with different scopes get two separate sessions in one request. |
+| `database.py` | Async engine, `Base` (declares `id` — no model repeats it), `get_db_session`: **one transaction per request**, committed after the handler returns but **before the response is sent**, rolled back on any exception. Repositories only `flush()`. Always inject it through `DbSessionDep` (`scope="function"`), never `Depends(get_db_session)` directly: that is what makes the commit happen before the response is sent, which idempotency relies on. |
 | `config.py` | `pydantic-settings`, reads `.env`. |
 | `exceptions.py` | `AppBaseError` and its subclasses, generic rather than per-resource, each carrying its `status_code`. A single `@app.exception_handler(AppBaseError)` in `main.py` handles them all, so a new error type is just a subclass with a `status_code`. |
 | `repository.py` | `BaseRepository` (below). |
@@ -205,7 +205,7 @@ So `categories/schemas.py` must never import from `todos/schemas.py`, and `todos
 
 ### Optional includes and pagination
 
-`GET /todos/{id}` takes an `include` query param and declares `response_model=TodoResponse | TodoDetailResponse`; the handler builds the right one explicitly with `.model_validate(...)`, since FastAPI can't choose a union member itself. The repository method takes a matching `with_<relation>: bool = False` flag that adds a `selectinload`.
+`GET /todos/{id}` takes an `include` query param and declares `response_model=TodoResponse | TodoDetailResponse`; the handler builds the right one explicitly with `.model_validate(...)`. The repository method takes a matching `with_<relation>: bool = False` flag that adds a `selectinload`.
 
 List endpoints return `PaginatedResponse[T]`: the service returns `(items, total)` and the router builds the envelope. Their `limit` is typed `LimitQuery` (`src/core/schemas.py`): only 10, 25, 50 or 100 are accepted, default 25. A new list endpoint must use `LimitQuery` rather than its own `ge`/`le` bounds. Multi-value filters on a many-to-many field (`category_ids`) use OR semantics, and `category_ids` is capped at 20 IDs. Free-text filters use `ilike` with `Query(min_length=2)` so a one-character search can't match everything, and escape `%`/`_` (`BaseRepository.escape_ilike_value`) so a literal one in the search term isn't read as a SQL wildcard.
 
@@ -213,15 +213,14 @@ List endpoints return `PaginatedResponse[T]`: the service returns `(items, total
 
 Three independent limits, all fixed-window counters in Redis, all answering 429 with a `Retry-After` header. Thresholds and windows are settings (`*_RATE_LIMIT_*` in `config.py` and `.env.example`).
 
-- **The TTL is set with `EXPIRE ... NX` after every `INCR`**, not only when the counter is created. `NX` never pushes an existing TTL back, so the window stays fixed; but if setting it ever failed once, the next increment sets it, instead of leaving a counter that never expires and blocks forever.
-- **`Retry-After` is the blocking counter's remaining TTL**, in seconds (`seconds_until_reset`, never below 1). The middleware sets it on its own `JSONResponse`; the login and sensitive-action dependencies pass it through `TooManyRequestsError(..., headers=...)`, which the `AppBaseError` handler in `main.py` copies onto the response. Any other exception can carry headers the same way.
-
 | Limit | Where | Counted per | What counts |
 |---|---|---|---|
 | **General** | `rate_limit` middleware in `main.py` | user ID from a valid access token, else client IP | every request except `GET /health` |
 | **Login** | `POST /login` | client IP **and** email, separately — either one blocks | failed logins only |
 | **Sensitive actions** | `PATCH /users/me/email` and `/me/password` | user, one counter shared by both routes | wrong current password only |
 
+- **The TTL is set with `EXPIRE ... NX` after every `INCR`**, not only when the counter is created: if setting it ever failed once, the next increment sets it, instead of leaving a counter that never expires and blocks forever.
+- **`Retry-After` is the blocking counter's remaining TTL**, in seconds (`seconds_until_reset`, never below 1). The middleware sets it on its own `JSONResponse`; the login and sensitive-action dependencies pass it through `TooManyRequestsError(..., headers=...)`, which the `AppBaseError` handler in `main.py` copies onto the response. Any other exception can carry headers the same way.
 - **The login and sensitive-action limits live in the router, not the service.** A dependency (`RateLimitLoginDep`, `SensitiveActionRateLimitDep`) checks the counter before the handler runs; the handler catches the service's exception (`UnauthorizedError` / `ForbiddenError`), increments, and re-raises. Services stay unaware of rate limiting. A new limited action follows the same shape.
 - **Only failures count** on login and sensitive actions, so a legitimate user isn't throttled by succeeding. A successful login does **not** reset the login counters.
 - **The general limit is a middleware**, because it covers every route. It reads the user ID straight from the JWT signature, with no database call; an invalid or expired token falls back to the IP instead of failing. It returns its 429 as a `JSONResponse` itself rather than raising `TooManyRequestsError`.
@@ -244,7 +243,7 @@ idempotency:<user_id>:<key> → {"status": "in_progress", "request_hash"}       
 - **Only 2xx responses are stored.** A 4xx depends on state that can change (a taken category name may be freed), so any non-2xx answer or exception releases the key and the retry runs for real. Replays carry `Idempotent-Replayed: true`.
 - **Stored only after the commit**, which `DbSessionDep`'s `scope="function"` guarantees: a failed commit answers 500 and stores nothing.
 - **Fails closed, unlike the general rate limit.** If Redis is down when claiming, the answer is 503: the client explicitly asked for a no-duplicate guarantee. A Redis failure *after* a success still returns the real 2xx — turning it into an error would push the client to create the duplicate.
-- **Declaration order in `main.py`: `idempotency`, then `rate_limit`, then `log_requests`** (the last declared wraps the others), so a replay still counts toward the general limit and is still logged.
+- **Declaration order in `main.py`: `idempotency`, then `rate_limit`, then `log_requests`**, so a replay still counts toward the general limit and is still logged.
 
 ### Logging and request IDs
 
