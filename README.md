@@ -118,14 +118,15 @@ All routes are prefixed with `/api/v1`. `POST /todos` and `POST /categories` acc
 
 ```
 src/
-├── core/            # cross-cutting: database, redis, config, logging, exceptions, security, generic repository
+├── core/            # cross-cutting: database, redis, config, logging, exceptions, security,
+│                    # rate limiting, idempotency, generic repository
 ├── modules/
 │   ├── auth/        # login, refresh, logout, JWT validation
 │   ├── users/        # user profiles, admin management
 │   ├── todos/        # todos, ownership
 │   ├── categories/   # categories, creator/admin permissions, cache
 │   └── todos_categories/  # many-to-many association table
-└── main.py          # app, request-ID middleware, exception handlers
+└── main.py          # app, middlewares (idempotency, rate limit, request ID), exception handler
 alembic/versions/    # migrations
 tests/               # integration tests + tests/unit/ for isolated service tests
 ```
