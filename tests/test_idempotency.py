@@ -60,7 +60,7 @@ async def test_replay_returns_stored_response_without_duplicate(
     assert await _todo_count(authenticated_client) == 1
 
 
-async def test_without_header_requests_are_deduplicated(
+async def test_without_header_requests_are_not_deduplicated(
     authenticated_client: AsyncClient, current_user: User
 ) -> None:
     """The header is optional: without it, two identical POSTs create two todos."""
