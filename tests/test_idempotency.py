@@ -11,7 +11,7 @@ from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_db_session
-from src.core.idempotency import hash_request_body, idempotency_redis_key
+from src.core.idempotency import hash_request, idempotency_redis_key
 from src.core.security import create_access_token
 from src.main import app
 from src.modules.users.models import User
@@ -87,6 +87,25 @@ async def test_same_key_with_different_body_returns_422(
     assert await _todo_count(authenticated_client) == 1
 
 
+async def test_same_key_on_another_endpoint_returns_422(
+    authenticated_client: AsyncClient, current_user: User
+) -> None:
+    """The hash covers the method and the path, not just the body: a key reused on another
+    route is a different request (422), never a replay of the other route's resource."""
+    # Valid for both schemas, each ignoring the other's field: only the route differs.
+    body = b'{"title": "Sport", "name": "Sport"}'
+    await authenticated_client.post(TODOS_PATH, content=body, headers=_headers(current_user.id))
+
+    response = await authenticated_client.post(
+        CATEGORIES_PATH, content=body, headers=_headers(current_user.id)
+    )
+
+    assert response.status_code == 422
+    assert "Idempotent-Replayed" not in response.headers
+    categories = await authenticated_client.get(CATEGORIES_PATH)
+    assert categories.json()["total"] == 0
+
+
 async def test_key_in_progress_returns_409_with_retry_after(
     authenticated_client: AsyncClient,
     current_user: User,
@@ -95,7 +114,8 @@ async def test_key_in_progress_returns_409_with_retry_after(
     """A retry arriving while the first request is still being processed is refused
     with 409 and told when to come back, instead of running a second time."""
     redis_key = idempotency_redis_key(user_id=str(current_user.id), idempotency_key=KEY)
-    claim = {"status": "in_progress", "request_hash": hash_request_body(TODO_BODY)}
+    request_hash = hash_request(method="POST", path=TODOS_PATH, body=TODO_BODY)
+    claim = {"status": "in_progress", "request_hash": request_hash}
     await redis_client.set(redis_key, json.dumps(claim), ex=30)
 
     response = await _post_todo(authenticated_client, current_user.id)
