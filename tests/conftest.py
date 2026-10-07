@@ -17,6 +17,7 @@ Configuration globale des tests avec pytest (conftest.py).
 # src.main) s'en sert pour choisir le niveau du root logger.
 os.environ.setdefault("DEBUG", "False")
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-not-for-production-123456789012"
+os.environ["APP_ENV"] = "test"
 
 from src.core.database import Base, get_db_session  # noqa: E402
 from src.core.redis import get_redis_client  # noqa: E402
