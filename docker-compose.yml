@@ -67,7 +67,7 @@ services:
   scheduler:
     <<: *app
     container_name: todo_scheduler
-    command: [ "uv", "run", "taskiq", "scheduler", "src.core.broker:scheduler" ]
+    command: [ "uv", "run", "taskiq", "scheduler", "src.core.broker:scheduler", "--fs-discover" ]
 
 volumes:
   postgres_data:
