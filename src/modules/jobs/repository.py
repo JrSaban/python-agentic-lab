@@ -22,7 +22,6 @@ class JobRepository(BaseRepository[Job]):
         skip: int = 0,
         limit: int = 25,
         owner_id: int | None = None,
-        task_id: str | None = None,
         task_name: str | None = None,
         status: JobStatus | None = None,
     ) -> Sequence[Job]:
@@ -31,7 +30,6 @@ class JobRepository(BaseRepository[Job]):
         query = self._apply_filters(
             query,
             owner_id=owner_id,
-            task_id=task_id,
             task_name=task_name,
             status=status,
         )
@@ -54,7 +52,6 @@ class JobRepository(BaseRepository[Job]):
             owner_id=owner_id,
             task_name=data.task_name,
             task_id=data.task_id,
-            status=data.status,
         )
         self.session.add(job)
         # Génère l'ID via PostgreSQL sans commiter la transaction globale
@@ -66,7 +63,6 @@ class JobRepository(BaseRepository[Job]):
         self,
         *,
         owner_id: int | None = None,
-        task_id: str | None = None,
         task_name: str | None = None,
         status: JobStatus | None = None,
     ) -> int:
@@ -75,7 +71,6 @@ class JobRepository(BaseRepository[Job]):
         query = self._apply_filters(
             query,
             owner_id=owner_id,
-            task_id=task_id,
             task_name=task_name,
             status=status,
         )
@@ -87,7 +82,6 @@ class JobRepository(BaseRepository[Job]):
         query: Select,
         *,
         owner_id: int | None = None,
-        task_id: str | None = None,
         task_name: str | None = None,
         status: JobStatus | None = None,
     ) -> Select:
@@ -96,7 +90,6 @@ class JobRepository(BaseRepository[Job]):
             query,
             [
                 FilterParams(column=Job.owner_id, value=owner_id, op="eq"),
-                FilterParams(column=Job.task_id, value=task_id, op="eq"),
                 FilterParams(column=Job.task_name, value=task_name, op="ilike"),
                 FilterParams(column=Job.status, value=status, op="eq"),
             ],

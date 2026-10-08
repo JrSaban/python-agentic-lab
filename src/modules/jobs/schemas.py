@@ -14,7 +14,6 @@ class JobCreate(BaseModel):
 
     task_id: str
     task_name: str
-    status: JobStatus = Field(default=JobStatus.PENDING)
 
 
 class JobUpdate(BaseModel):
