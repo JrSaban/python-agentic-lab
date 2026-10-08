@@ -2,7 +2,6 @@
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,13 +19,6 @@ from tests.conftest import test_session_factory as session_factory
 
 PAST_RETENTION = timedelta(days=settings.SOFT_DELETE_RETENTION_DAYS + 1)
 WITHIN_RETENTION = timedelta(days=settings.SOFT_DELETE_RETENTION_DAYS - 1)
-
-
-@pytest.fixture(autouse=True)
-def job_uses_test_database(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The job opens its own session from the production factory, out of reach of
-    dependency_overrides: point it at the test database instead."""
-    monkeypatch.setattr("src.modules.maintenance.tasks.async_session_factory", session_factory)
 
 
 async def _run_job() -> dict[str, int]:
