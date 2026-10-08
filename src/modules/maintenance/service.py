@@ -1,9 +1,9 @@
 """Service Layer (Logique métier pour maintenance)."""
 
-from src.core.exceptions import ForbiddenError
 from datetime import UTC, datetime, timedelta
 
 from src.core.config import settings
+from src.core.exceptions import ForbiddenError
 from src.modules.categories.repository import CategoryRepository
 from src.modules.jobs.models import Job
 from src.modules.jobs.service import JobService
