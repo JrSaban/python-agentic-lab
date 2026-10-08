@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from uuid import uuid4
 
 import structlog
 
@@ -49,6 +50,11 @@ class JobService:
         if not job:
             raise NotFoundError(f"Job avec l'ID {task_id} introuvable.")
         return job
+
+    async def create_job(self, owner_id: int, task_name: str) -> Job:
+        """Create a new owned job."""
+        create_data = JobCreate(task_id=uuid4().hex, task_name=task_name)
+        return await self.repository.create(owner_id=owner_id, data=create_data)
 
     async def mark_running(self, *, task_id: str, task_name: str) -> Job:
         """Mark a job as running. If the job does not exist, it will be created."""
