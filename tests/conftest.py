@@ -76,7 +76,11 @@ def background_code_uses_test_database(monkeypatch: pytest.MonkeyPatch) -> None:
     """Jobs and the job-tracking middleware open their own sessions from the production
     factory, out of reach of dependency_overrides: point them at the test database, or
     every test that runs a job would write into the real Postgres."""
-    for module in ("src.modules.maintenance.tasks", "src.modules.jobs.middleware"):
+    for module in (
+        "src.modules.maintenance.tasks",
+        "src.modules.maintenance.router",
+        "src.modules.jobs.middleware",
+    ):
         monkeypatch.setattr(f"{module}.async_session_factory", test_session_factory)
 
 
