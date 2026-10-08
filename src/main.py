@@ -28,6 +28,7 @@ from src.core.redis import get_redis_client
 from src.core.security import decode_access_token
 from src.modules.auth.router import router as auth_router
 from src.modules.categories.router import router as categories_router
+from src.modules.maintenance.router import router as maintenance_router
 from src.modules.todos.router import router as todos_router
 from src.modules.users.router import router as users_router
 
@@ -63,6 +64,7 @@ app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(todos_router, prefix=settings.API_V1_STR)
 app.include_router(categories_router, prefix=settings.API_V1_STR)
 app.include_router(users_router, prefix=settings.API_V1_STR)
+app.include_router(maintenance_router, prefix=settings.API_V1_STR)
 
 
 logger = structlog.get_logger()
