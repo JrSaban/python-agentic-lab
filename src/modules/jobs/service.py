@@ -50,7 +50,7 @@ class JobService:
             raise NotFoundError(f"Job avec l'ID {task_id} introuvable.")
         return job
 
-    async def mark_running(self, *, task_id: str, task_name: str) -> Job | None:
+    async def mark_running(self, *, task_id: str, task_name: str) -> Job:
         """Mark a job as running. If the job does not exist, it will be created."""
         job = await self.repository.get_by_task_id(task_id=task_id, owner_id=None)
 
