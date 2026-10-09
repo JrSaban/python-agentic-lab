@@ -1,9 +1,9 @@
 """Modèles pour le domaine Jobs."""
 
-from pydantic import JsonValue
 from datetime import datetime
 from enum import StrEnum
 
+from pydantic import JsonValue
 from sqlalchemy import JSON, CheckConstraint, DateTime, Enum, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
