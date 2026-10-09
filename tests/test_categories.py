@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.security import hash_password
 from src.modules.categories.models import Category
 from src.modules.categories.repository import CategoryRepository
 from src.modules.categories.schemas import CategoryCreate, CategoryUpdate
@@ -16,6 +17,8 @@ from src.modules.categories.service import CategoryService
 from src.modules.todos.repository import TodoRepository
 from src.modules.todos.schemas import TodoCreate
 from src.modules.users.models import User
+from src.modules.users.repository import UserRepository
+from src.modules.users.schemas import UserCreate
 from tests.conftest import test_session_factory as session_factory
 
 # --- create ---
@@ -106,6 +109,21 @@ async def test_create_category_concurrent_same_name_no_duplicate(
     and `create_category` must translate the resulting IntegrityError into a clean
     ConflictError instead of leaking it."""
 
+    # A real, committed creator: both concurrent sessions must see it, and the
+    # foreign key on created_by_id is enforced.
+    async with session_factory() as setup_session:
+        creator = await UserRepository(setup_session).create(
+            UserCreate(
+                email="creator@test.com",
+                first_name="Category",
+                last_name="Creator",
+                password="secret123",
+                confirm_password="secret123",
+            ),
+            hash_password("secret123"),
+        )
+        await setup_session.commit()
+
     write_lock = asyncio.Lock()
 
     async def attempt(name: str) -> Category | Exception:
@@ -122,7 +140,7 @@ async def test_create_category_concurrent_same_name_no_duplicate(
             service = CategoryService(repository, redis_client)
             try:
                 category = await service.create_category(
-                    created_by_id=1, data=CategoryCreate(name=name)
+                    created_by_id=creator.id, data=CategoryCreate(name=name)
                 )
                 await session.commit()
                 return category

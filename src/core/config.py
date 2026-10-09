@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # Taskiq
     TASK_RESULT_TTL_HOURS: int = 72
 
+    # Prunable
+    SOFT_DELETE_RETENTION_DAYS: int = 30
+
     @field_validator("JWT_SECRET_KEY")
     @classmethod
     def validate_jwt_secret_key(cls, v: str) -> str:

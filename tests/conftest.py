@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 import fakeredis
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 """
@@ -36,6 +37,14 @@ test_engine = create_async_engine(
     echo=False,
     connect_args={"check_same_thread": False},
 )
+
+
+@event.listens_for(test_engine.sync_engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, connection_record) -> None:
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
 
 test_session_factory = async_sessionmaker(
     bind=test_engine,
