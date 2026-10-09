@@ -36,3 +36,7 @@ lives in the README's Features section and in `CLAUDE.md`, not here.
    them to their own module (e.g. `src/core/middlewares.py`) and keep `main.py` to wiring. The
    storage modules (`rate_limit.py`, `idempotency.py`) stay HTTP-free; only the HTTP decisions
    move. Their declaration order must be kept: it decides which one wraps which.
+8. **Remote MCP server.** Serve the MCP server over HTTP, next to the API, so an agent connects by
+   URL with a personal API token instead of launching it locally — how companies expose MCP to
+   their customers. Only once the human-approval gate exists and after a dedicated security
+   review of what a remote agent can reach and do.
