@@ -88,3 +88,7 @@ class JobService:
             finished_at=datetime.now(UTC),
         )
         return await self.repository.update(job, data=update_data)
+
+    async def prune_old_jobs(self, before: datetime) -> int:
+        """Prune old jobs."""
+        return await self.repository.prune_old_jobs(before)

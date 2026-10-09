@@ -4,8 +4,10 @@ Encapsule les requêtes SQL (SQLAlchemy 2.0 select, add, delete).
 """
 
 from collections.abc import Sequence
+from datetime import datetime
+from typing import cast
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import CursorResult, Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.repository import BaseRepository, FilterParams
@@ -58,6 +60,12 @@ class JobRepository(BaseRepository[Job]):
         await self.session.flush()
         await self.session.refresh(job)
         return job
+
+    async def prune_old_jobs(self, before: datetime) -> int:
+        """Delete jobs older than the given date; return how many were deleted."""
+        query = delete(Job).where(Job.created_at < before)
+        result = await self.session.execute(query)
+        return cast(CursorResult[Job], result).rowcount
 
     async def count(
         self,

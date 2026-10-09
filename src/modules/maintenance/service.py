@@ -40,3 +40,12 @@ class MaintenanceService:
             raise ForbiddenError("Vous devez être admin pour lancer le prune.")
 
         return await self.job_service.create_job(current_user.id, "maintenance:prune_soft_deleted")
+
+    async def prune_old_jobs(self) -> dict[str, int]:
+        """Prune old jobs."""
+        before = datetime.now(UTC) - timedelta(days=settings.JOB_RETENTION_DAYS)
+        jobs_deleted_count = await self.job_service.prune_old_jobs(before)
+
+        return {
+            "jobs": jobs_deleted_count,
+        }
