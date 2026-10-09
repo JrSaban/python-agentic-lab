@@ -50,6 +50,7 @@ class Settings(BaseSettings):
 
     # Prunable
     SOFT_DELETE_RETENTION_DAYS: int = 30
+    JOB_RETENTION_DAYS: int = 30
 
     @field_validator("JWT_SECRET_KEY")
     @classmethod
