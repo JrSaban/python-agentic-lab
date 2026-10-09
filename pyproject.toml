@@ -15,6 +15,8 @@ dependencies = [
     "redis>=8.1.0",
     "sqlalchemy[asyncio]>=2.0.52",
     "structlog>=26.1.0",
+    "taskiq[reload]>=0.13.0",
+    "taskiq-redis>=1.2.4",
     "uvicorn[standard]>=0.39.0",
 ]
 

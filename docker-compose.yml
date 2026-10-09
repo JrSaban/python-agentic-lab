@@ -1,27 +1,30 @@
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  volumes:
+    # Montage de volume pour activer le rechargement à chaud (Hot-Reload) lors du développement local
+    - ./src:/app/src
+    - ./.env:/app/.env
+  env_file:
+    - .env
+  environment:
+    # En environnement Docker, l'hôte de la BDD est le nom du service ("db") et REDIS
+    - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-todo_db}
+    - REDIS_URL=redis://redis:6379/0
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *app
     container_name: todo_api
-    restart: unless-stopped
     ports:
       - "8000:8000"
-    volumes:
-      # Montage de volume pour activer le rechargement à chaud (Hot-Reload) lors du développement local
-      - ./src:/app/src
-      - ./.env:/app/.env
-    env_file:
-      - .env
-    environment:
-      # En environnement Docker, l'hôte de la BDD est le nom du service ("db") et REDIS
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-todo_db}
-      - REDIS_URL=redis://redis:6379/0
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
 
   db:
     image: postgres:16-alpine
@@ -55,6 +58,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  worker:
+    <<: *app
+    container_name: todo_worker
+    command: [ "uv", "run", "taskiq", "worker", "src.core.broker:broker", "--fs-discover", "--reload" ]
+
+  scheduler:
+    <<: *app
+    container_name: todo_scheduler
+    command: [ "uv", "run", "taskiq", "scheduler", "src.core.broker:scheduler" ]
 
 volumes:
   postgres_data:

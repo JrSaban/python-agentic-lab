@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     IDEMPOTENCY_KEY_TTL_MINUTES: int = 60
     IDEMPOTENCY_LOCK_TTL_SECONDS: int = 30
 
+    # Taskiq
+    TASK_RESULT_TTL_HOURS: int = 72
+
     @field_validator("JWT_SECRET_KEY")
     @classmethod
     def validate_jwt_secret_key(cls, v: str) -> str:
