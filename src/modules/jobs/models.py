@@ -24,7 +24,7 @@ class Job(Base):
     __tablename__ = "jobs"
 
     task_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     task_name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[JobStatus] = mapped_column(
         Enum(
@@ -45,6 +45,7 @@ class Job(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+        index=True,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
