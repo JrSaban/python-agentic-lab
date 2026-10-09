@@ -27,6 +27,11 @@ async def failing_job() -> None:
     raise ValueError("internal detail that must not reach the client")
 
 
+@broker.task(task_name="tests:list_job")
+async def list_job() -> list[int]:
+    return [1, 2, 3]
+
+
 async def _create_job(
     session: AsyncSession,
     owner_id: int | None,
@@ -80,6 +85,17 @@ async def test_failed_job_stores_only_the_exception_class_name() -> None:
     assert job.error == "ValueError"
     assert job.result is None
     assert job.finished_at is not None
+
+
+async def test_any_json_result_is_recorded() -> None:
+    """A job may return any JSON value, not only a dict: a list is stored as is and the
+    run still reaches succeeded instead of staying running."""
+    task = await list_job.kiq()
+    await task.wait_result()
+
+    [job] = await _jobs_by_task_id(task.task_id)
+    assert job.status == JobStatus.SUCCEEDED
+    assert job.result == [1, 2, 3]
 
 
 async def test_launched_job_updates_its_existing_row(

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import structlog
+from pydantic import JsonValue
 
 from src.core.exceptions import NotFoundError
 from src.modules.jobs.models import Job, JobStatus
@@ -73,7 +74,7 @@ class JobService:
         return job
 
     async def mark_finished(
-        self, *, task_id: str, is_error: bool, result: dict | None, error: str | None
+        self, *, task_id: str, is_error: bool, result: JsonValue | None, error: str | None
     ) -> Job | None:
         """Mark a job as finished."""
         job = await self.repository.get_by_task_id(task_id=task_id, owner_id=None)
