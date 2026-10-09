@@ -1,10 +1,13 @@
+"""Tests unitaires de la configuration du broker Taskiq."""
+
+import pytest
 from taskiq.serializers import JSONSerializer
 
 from src.core import broker as broker_module
 from src.core.config import settings
 
 
-def test_redis_result_backend_serializes_as_json(monkeypatch):
+def test_redis_result_backend_serializes_as_json(monkeypatch: pytest.MonkeyPatch) -> None:
     """The Redis result backend never uses pickle, whose loading executes code."""
     monkeypatch.setattr(settings, "APP_ENV", "production")
 
