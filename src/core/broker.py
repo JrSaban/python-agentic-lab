@@ -12,6 +12,7 @@ Les jobs vivent dans les fichiers `tasks.py` des modules, découverts par le wor
     taskiq scheduler src.core.broker:scheduler           # équivalent de schedule:run
 """
 
+from taskiq.serializers import JSONSerializer
 from taskiq import AsyncBroker, InMemoryBroker, TaskiqScheduler
 from taskiq.schedule_sources import LabelScheduleSource
 from taskiq_redis import RedisAsyncResultBackend, RedisStreamBroker
@@ -32,6 +33,7 @@ def _build_broker() -> AsyncBroker:
         redis_url=settings.REDIS_URL,
         result_ex_time=settings.TASK_RESULT_TTL_HOURS * 3600,
         prefix_str="taskiq:result",
+        serializer=JSONSerializer(),
     )
 
     return (
