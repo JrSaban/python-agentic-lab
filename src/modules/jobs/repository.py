@@ -28,7 +28,7 @@ class JobRepository(BaseRepository[Job]):
         status: JobStatus | None = None,
     ) -> Sequence[Job]:
         """Get paginated jobs."""
-        query = select(Job).order_by(Job.created_at.desc())
+        query = select(Job).order_by(Job.created_at.desc(), Job.id.desc())
         query = self._apply_filters(
             query,
             owner_id=owner_id,
