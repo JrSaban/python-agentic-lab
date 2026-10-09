@@ -71,6 +71,19 @@ async def setup_test_database() -> AsyncGenerator[None, None]:
         await conn.run_sync(Base.metadata.drop_all)
 
 
+@pytest.fixture(autouse=True)
+def background_code_uses_test_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Jobs and the job-tracking middleware open their own sessions from the production
+    factory, out of reach of dependency_overrides: point them at the test database, or
+    every test that runs a job would write into the real Postgres."""
+    for module in (
+        "src.modules.maintenance.tasks",
+        "src.modules.maintenance.router",
+        "src.modules.jobs.middleware",
+    ):
+        monkeypatch.setattr(f"{module}.async_session_factory", test_session_factory)
+
+
 @pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Fournit une session BDD de test active si un test en a besoin directement."""

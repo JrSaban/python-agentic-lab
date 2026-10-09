@@ -18,6 +18,7 @@ from taskiq_redis import RedisAsyncResultBackend, RedisStreamBroker
 
 from src.core.config import settings
 from src.core.logging import setup_logging
+from src.modules.jobs.middleware import JobTrackingMiddleware
 
 setup_logging()
 
@@ -25,7 +26,7 @@ setup_logging()
 def _build_broker() -> AsyncBroker:
     """Redis broker, or an in-memory one under tests."""
     if settings.APP_ENV == "test":
-        return InMemoryBroker(await_inplace=True)
+        return InMemoryBroker(await_inplace=True).with_middlewares(JobTrackingMiddleware())
 
     backend = RedisAsyncResultBackend(
         redis_url=settings.REDIS_URL,
@@ -33,8 +34,10 @@ def _build_broker() -> AsyncBroker:
         prefix_str="taskiq:result",
     )
 
-    return RedisStreamBroker(url=settings.REDIS_URL, queue_name="taskiq:queue").with_result_backend(
-        backend
+    return (
+        RedisStreamBroker(url=settings.REDIS_URL, queue_name="taskiq:queue")
+        .with_result_backend(backend)
+        .with_middlewares(JobTrackingMiddleware())
     )
 
 

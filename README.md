@@ -28,6 +28,7 @@ A REST API for managing todos and categories, built with **FastAPI** and **Clean
 - **Soft deletes** on todos and categories — a deleted row stays in the database but is invisible to the API, like Laravel's `SoftDeletes`, and is deleted for good by a weekly background job after 30 days, like Laravel's `Prunable`
 - **Rate limiting** — a general per-user / per-IP request quota, plus stricter limits on failed logins and on wrong-password attempts when changing your email or password
 - **Idempotency keys** — an optional `Idempotency-Key` header on `POST /todos` and `POST /categories`, so a retried request returns the original response instead of creating a duplicate
+- **Background jobs with tracking** — every run is recorded (pending, running, succeeded, failed) and readable through the API, each user seeing their own jobs and admins all of them, scheduled runs included; admins can also start the pruning on demand
 - **Redis caching** on category reads, invalidated on every write
 - **Structured logging** — one JSON line per request, correlated by an `X-Request-ID` header
 - **Alembic migrations**, including a 3-step pattern (add nullable → backfill → enforce `NOT NULL`) for introducing foreign keys on already-populated tables
@@ -43,7 +44,7 @@ A few decisions worth a second look if you're skimming the code:
 - **Rate limits that only punish failures.** Login attempts are counted per IP *and* per email, so neither rotating emails from one machine nor spreading guesses across machines gets around the limit — and only failed attempts count, so a legitimate user is never throttled for logging in. The services know nothing about it: limits are checked and counted at the router level.
 - **Retries that can't create duplicates, even concurrent ones.** A client that times out and retries is the classic duplicate-maker — and the retry usually arrives while the first request is still running. The idempotency key is therefore claimed atomically in Redis (`SET NX`) *before* the request runs, so a concurrent retry gets a `409` instead of running twice. Only successful responses are stored, and only once the database transaction has actually committed.
 - **A cache that never takes the API down.** Paginated category lists are invalidated with a generation counter (one `INCR` instead of hunting for every cached page). Every Redis call on the cache path is allowed to fail: the request falls back to PostgreSQL and logs a warning.
-- **Generic repository layer.** `BaseRepository[ModelT: Base]` (`src/core/repository.py`) uses Python 3.12's native generic syntax (`class Foo[T]`) to share pagination, counting and typed filtering across `Todo`, `Category` and `User` repositories, while each resource keeps its own fully-typed filter parameters — no dynamic/untyped filter dicts.
+- **Generic repository layer.** `BaseRepository[ModelT: Base]` (`src/core/repository.py`) uses Python 3.12's native generic syntax (`class Foo[T]`) to share pagination, counting and typed filtering across every repository, while each resource keeps its own fully-typed filter parameters — no dynamic/untyped filter dicts. A `SoftDeleteRepository` layer adds the pruning of old soft-deleted rows to the two models that need it, and only to them.
 - **Clean Architecture, enforced consistently.** Every module follows the same `router → service → repository → models` layering; services raise framework-agnostic exceptions (`NotFoundError`, `ForbiddenError`, ...) mapped to HTTP status codes in one place, never `HTTPException` scattered through the business logic.
 - **Tested at two levels.** Fast unit tests exercise each service in isolation with mocked repositories; integration tests run the full FastAPI stack against a real (in-memory) database. CI also applies every migration to a real PostgreSQL instance.
 
@@ -116,6 +117,9 @@ All routes are prefixed with `/api/v1`. `POST /todos` and `POST /categories` acc
 | `GET` `POST` | `/categories` | List / create a category |
 | `GET` `PATCH` `DELETE` | `/categories/{id}` | View / update (creator or admin) / delete (admin only) |
 | `GET` | `/categories/{id}/todos` | Todos belonging to a category |
+| `POST` | `/maintenance/prune` | Start the soft-delete pruning now, returns the job to follow *(admin only)* |
+| `GET` | `/jobs` | List jobs (your own, or all for admins) |
+| `GET` | `/jobs/{task_id}` | A job's status, result or error |
 
 ## Project structure
 
@@ -128,6 +132,7 @@ src/
 │   ├── users/        # user profiles, admin management
 │   ├── todos/        # todos, ownership
 │   ├── categories/   # categories, creator/admin permissions, cache
+│   ├── jobs/         # job tracking: table, Taskiq middleware, status endpoints
 │   ├── maintenance/  # background jobs spanning several modules (weekly pruning)
 │   └── todos_categories/  # many-to-many association table
 └── main.py          # app, middlewares (idempotency, rate limit, request ID), exception handler

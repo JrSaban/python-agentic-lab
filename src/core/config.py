@@ -46,10 +46,11 @@ class Settings(BaseSettings):
     IDEMPOTENCY_LOCK_TTL_SECONDS: int = 30
 
     # Taskiq
-    TASK_RESULT_TTL_HOURS: int = 72
+    TASK_RESULT_TTL_HOURS: int = 2
 
     # Prunable
     SOFT_DELETE_RETENTION_DAYS: int = 30
+    JOB_RETENTION_DAYS: int = 30
 
     @field_validator("JWT_SECRET_KEY")
     @classmethod
