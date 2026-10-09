@@ -37,7 +37,7 @@ uv run alembic upgrade head
 
 ### Environment
 
-`.env` targets a host-run API (`POSTGRES_HOST=localhost`, `REDIS_URL=redis://localhost:6379/0`). `docker-compose.yml` overrides `DATABASE_URL` and `REDIS_URL` so they point at the `db`/`redis` service names — a new connection setting needs both places. `api`, `worker` and `scheduler` share one `x-app` YAML anchor (build, volumes, env, depends_on) and differ only by `command`/`ports`; a service that redefines a key of the anchor replaces it whole, it doesn't merge into it.
+`.env` targets a host-run API (`POSTGRES_HOST=localhost`, `REDIS_URL=redis://localhost:6379/0`). `docker-compose.yml` overrides `DATABASE_URL` and `REDIS_URL` so they point at the `db`/`redis` service names — a new connection setting needs both places. `api`, `worker` and `scheduler` share one `x-app` YAML anchor and differ only by `command`/`ports`.
 
 `Settings` refuses to start if `JWT_SECRET_KEY` is shorter than 32 bytes or starts with `change-me`, which is exactly what `.env.example` ships. A fresh `cp .env.example .env` therefore crashes at import time until a real secret is set (`openssl rand -hex 32`). Anything that imports `src.core.config` needs the variable, including Alembic — which is why the CI `migrations` job sets it.
 
@@ -62,9 +62,6 @@ Which kind to write:
 `conftest.py` force-sets `JWT_SECRET_KEY` with `os.environ[...]` but `DEBUG` with `os.environ.setdefault` right above it, both before any `src.*` import. The difference is deliberate, not an inconsistency to fix: tests must never depend on the secret in a developer's `.env`, while `DEBUG` may be turned on from the shell to see logs. It also force-sets `APP_ENV=test`, which makes `src/core/broker.py` build an in-memory broker (see "Background jobs").
 
 The SQLite test engine runs `PRAGMA foreign_keys=ON` on every connection (SQLite ignores foreign keys otherwise), so tests enforce FKs and `ON DELETE CASCADE` like Postgres. A test row must point at rows that really exist — a hardcoded `created_by_id=1` with no such user now fails.
-
-`test_session_factory` is imported into test modules under another name (`as session_factory`): pytest would try to collect a module-level name starting with `test_`.
-
 ### Auth fixtures
 
 `current_user`/`authenticated_client` (plain user) and `current_admin_user`/`authenticated_admin` (admin) create the `User` row directly through `UserRepository` and override `get_current_user` with `lambda: user`, so no JWT is involved. This is the default for permission-matrix tests. Only `test_get_me_with_real_token`/`test_get_me_without_token_returns_401` in `tests/test_users.py` send a real `Authorization: Bearer` header obtained from a real login, to prove the JWT/dependency wiring end to end. `tests/test_auth.py` uses real registration + `/login` for the refresh-token flows, because those need tokens actually issued into Redis.
@@ -95,11 +92,11 @@ Services return ORM models and the router serializes them through `response_mode
 
 | File | Role |
 |---|---|
-| `database.py` | Async engine, `Base` (declares `id` — no model repeats it), `get_db_session`: **one transaction per request**, committed after the handler returns but **before the response is sent**, rolled back on any exception. Repositories only `flush()`. Always inject it through `DbSessionDep` (`scope="function"`), never `Depends(get_db_session)` directly: that is what makes the commit happen before the response is sent, which idempotency relies on. |
+| `database.py` | Async engine, `Base` (declares `id` — no model repeats it), `get_db_session`: **one transaction per request**, committed after the handler returns but **before the response is sent**, rolled back on any exception. Repositories only `flush()`. Always inject it through `DbSessionDep` (`scope="function"`), never `Depends(get_db_session)` directly: that is what makes the commit happen before the response is sent, which idempotency and the job launch rely on. |
 | `config.py` | `pydantic-settings`, reads `.env`. |
 | `exceptions.py` | `AppBaseError` and its subclasses, generic rather than per-resource, each carrying its `status_code`. A single `@app.exception_handler(AppBaseError)` in `main.py` handles them all, so a new error type is just a subclass with a `status_code`. |
 | `repository.py` | `BaseRepository` and `SoftDeleteRepository` (below). |
-| `broker.py` | The Taskiq `broker` (Redis queue + result store, in-memory under tests) and `scheduler` (see "Background jobs"). |
+| `broker.py` | The Taskiq `broker` (in-memory under tests, with `JobTrackingMiddleware`) and `scheduler` (see "Background jobs"). |
 | `schemas.py` | `PaginatedResponse[T]` and `LimitQuery`. |
 | `security.py` | Argon2 password hashing, JWT access tokens, refresh-token generation and hashing. |
 | `redis.py` | The shared async client (`decode_responses=True`, so values come back as `str`), the `get_redis_client` dependency, and `hash_redis_key`. |
@@ -259,22 +256,29 @@ idempotency:<user_id>:<key> → {"status": "in_progress", "request_hash"}       
 
 ### Background jobs
 
-Taskiq, the counterpart of Laravel queues + scheduler. Three roles, three processes:
+Taskiq, not ARQ (ARQ requires `redis<6`). `src/core/broker.py` holds the `broker` and the `scheduler`; the worker and the scheduler run as separate processes (`worker`/`scheduler` compose services).
 
-- **`broker`** (`src/core/broker.py`) — the intermediary: the API sends a job with `.kiq()` (`dispatch()`), a worker receives it. Results are stored in Redis for `TASK_RESULT_TTL_HOURS` (72h: a Sunday run must still be readable on Monday morning).
-- **worker** — `taskiq worker`, the `queue:work` equivalent. Several may run.
-- **scheduler** — `taskiq scheduler`, sends scheduled jobs into the queue at their cron time (UTC) and runs nothing itself. **Exactly one instance**: two would send every scheduled job twice.
+- **Exactly one scheduler**: two would send every scheduled job twice. Crons are UTC.
+- **`RedisStreamBroker`, not `ListQueueBroker`.** redis-py 8 sets a 5 s `socket_timeout` by default and `ListQueueBroker` blocks on an unbounded `BRPOP`: an idle worker crashed every ~6 s. Streams also acknowledge a job only once handled, so a worker dying mid-job hands it to another — **every job must be safe to run twice.**
+- **Jobs live in a `tasks.py` per module**, found by `--fs-discover`, which **both the worker and the scheduler need**: without it the scheduler never imports the job and its schedule silently never fires. A job spanning modules goes into `maintenance`. Each job sets an explicit `task_name` (`"<module>:<job>"`), so moving the file doesn't orphan queued messages.
+- **A job opens its own session and commits** (no `DbSessionDep` in the worker), then calls a service. `async_session_factory` is only ever opened at such entry points — `tasks.py`, the tracking middleware, a background task — never in a service or repository. Each of those modules must be listed in `conftest.py`'s `background_code_uses_test_database`, or its tests write into the real Postgres.
+- **Under tests** (`APP_ENV=test`) `broker` is an `InMemoryBroker(await_inplace=True)`: `.kiq()` runs the job, middleware included, before returning.
+- **The API starts and stops the broker** in `main.py`'s `lifespan`; the worker never imports `main.py`.
+- **No retries.** Taskiq's own result store (`TASK_RESULT_TTL_HOURS`) is only for debugging with `wait_result()`; the `jobs` table is the record.
 
-Rules, all deliberate:
+### Job tracking
 
-- **Taskiq, not ARQ** (the ROADMAP item still says ARQ): ARQ's latest release requires `redis<6`, and the project is on redis-py 8 — uv silently falls back to an old ARQ instead. SAQ has the same problem.
-- **`RedisStreamBroker`, not `ListQueueBroker`.** redis-py 8 sets a 5 s `socket_timeout` by default; `ListQueueBroker` waits on an unbounded `BRPOP`, so an idle worker crashed and restarted every ~6 s. Streams read in 2 s slices, and acknowledge a job only once handled: a worker dying mid-job hands it to another (at-least-once). **Every job must therefore be safe to run twice.**
-- **Jobs live in a `tasks.py` per module**, the Celery convention, found by `--fs-discover`. **Both the worker and the scheduler need `--fs-discover`**: without it the scheduler never imports the job and its schedule silently never fires. A job that spans modules goes into `maintenance`.
-- **A job is a thin entry point**, like a route: open a session, call a service, commit. Each job sets an explicit `task_name` (`"<module>:<job>"`), so moving the file doesn't orphan messages already queued.
-- **Jobs open their own session** from `async_session_factory` and commit themselves — there is no FastAPI, hence no `DbSessionDep`, in the worker. Import the factory by name in `tasks.py`: tests monkeypatch `src.modules.<module>.tasks.async_session_factory` with `test_session_factory`.
-- **Under tests** (`APP_ENV=test`), `broker` is an `InMemoryBroker(await_inplace=True)`: `.kiq()` runs the job immediately, no worker or Redis, and `await task.wait_result()` returns its result. The choice is made at import, since jobs attach to the broker by decorator.
-- **The API starts and stops the broker** in `main.py`'s `lifespan`. The worker never imports `main.py`.
-- **Failures are not retried.** A failed job is logged and its result kept with `is_err=True` until the TTL; there is no `failed_jobs` table. Fine for the weekly prune, which catches up on its next run.
+```
+jobs: task_id (Taskiq id, exposed) · owner_id (NULL for scheduled runs) · task_name · status · result (JSON) · error · started_at · finished_at
+```
+
+- **`JobTrackingMiddleware`** (`src/modules/jobs/middleware.py`, a Taskiq middleware, registered on both brokers in `broker.py`) moves every run to `running` then `succeeded`/`failed`. A run with no row yet — a scheduled one — gets a row with no owner. A tracking failure is logged and never blocks the job.
+- **`status` is a `StrEnum` stored by value** (`values_callable`) in a `VARCHAR` with a `CHECK` constraint, not a native Postgres enum: adding a state needs a migration.
+- **`error` holds the exception's class name only.** The owner sees it, and the message can carry internals; responses stay the same for every role (no field filtering, see Ownership).
+- **`POST /maintenance/prune`** (admin, 202) creates the `pending` row in the request transaction and sends the job from a `BackgroundTasks`, i.e. **after the commit**, with a `task_id` generated up front. Sent during the handler, a worker could pick the job before the commit, not see the row, create its own ownerless one, and the request's insert would then hit the unique `task_id`. If sending fails, the row is marked `failed`.
+- **`GET /jobs`, `GET /jobs/{task_id}`**: a user sees their own jobs, an admin every job including ownerless runs; someone else's job is a 404. The internal `id` is never exposed.
+- **`maintenance:prune_old_jobs`** (Sunday 04:00 UTC) deletes rows **created** more than `JOB_RETENTION_DAYS` ago whatever their status, which also clears runs stuck `pending`/`running`.
+- `MaintenanceService` reaches todos/categories through their repositories (plain SQL, no rule of theirs applies) but jobs only through `JobService`, which owns `task_id` generation — never `job_service.repository`.
 
 ### Logging and request IDs
 

@@ -28,6 +28,7 @@ A REST API for managing todos and categories, built with **FastAPI** and **Clean
 - **Soft deletes** on todos and categories — a deleted row stays in the database but is invisible to the API, like Laravel's `SoftDeletes`, and is deleted for good by a weekly background job after 30 days, like Laravel's `Prunable`
 - **Rate limiting** — a general per-user / per-IP request quota, plus stricter limits on failed logins and on wrong-password attempts when changing your email or password
 - **Idempotency keys** — an optional `Idempotency-Key` header on `POST /todos` and `POST /categories`, so a retried request returns the original response instead of creating a duplicate
+- **Background jobs with tracking** — every run is recorded (pending, running, succeeded, failed) and readable through the API, each user seeing their own jobs and admins all of them, scheduled runs included; admins can also start the pruning on demand
 - **Redis caching** on category reads, invalidated on every write
 - **Structured logging** — one JSON line per request, correlated by an `X-Request-ID` header
 - **Alembic migrations**, including a 3-step pattern (add nullable → backfill → enforce `NOT NULL`) for introducing foreign keys on already-populated tables
@@ -116,6 +117,9 @@ All routes are prefixed with `/api/v1`. `POST /todos` and `POST /categories` acc
 | `GET` `POST` | `/categories` | List / create a category |
 | `GET` `PATCH` `DELETE` | `/categories/{id}` | View / update (creator or admin) / delete (admin only) |
 | `GET` | `/categories/{id}/todos` | Todos belonging to a category |
+| `POST` | `/maintenance/prune` | Start the soft-delete pruning now, returns the job to follow *(admin only)* |
+| `GET` | `/jobs` | List jobs (your own, or all for admins) |
+| `GET` | `/jobs/{task_id}` | A job's status, result or error |
 
 ## Project structure
 
@@ -128,6 +132,7 @@ src/
 │   ├── users/        # user profiles, admin management
 │   ├── todos/        # todos, ownership
 │   ├── categories/   # categories, creator/admin permissions, cache
+│   ├── jobs/         # job tracking: table, Taskiq middleware, status endpoints
 │   ├── maintenance/  # background jobs spanning several modules (weekly pruning)
 │   └── todos_categories/  # many-to-many association table
 └── main.py          # app, middlewares (idempotency, rate limit, request ID), exception handler
