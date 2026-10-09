@@ -1,5 +1,6 @@
 """Modèles pour le domaine Jobs."""
 
+from pydantic import JsonValue
 from datetime import datetime
 from enum import StrEnum
 
@@ -37,7 +38,7 @@ class Job(Base):
         default=JobStatus.PENDING,
         nullable=False,
     )
-    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    result: Mapped[JsonValue | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Timestamps automatiques (created_at / updated_at) gérés côté base de données
