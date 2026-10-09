@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy import JSON, CheckConstraint, DateTime, Enum, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.database import Base
@@ -32,7 +32,7 @@ class Job(Base):
             native_enum=False,
             values_callable=lambda enum_cls: [member.value for member in enum_cls],
             length=20,
-            create_constraint=True,
+            create_constraint=False,
         ),
         default=JobStatus.PENDING,
         nullable=False,
@@ -60,6 +60,13 @@ class Job(Base):
     finished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN ({', '.join(f"'{status.value}'" for status in JobStatus)})",
+            name="jobstatus",
+        ),
     )
 
     def __repr__(self) -> str:
